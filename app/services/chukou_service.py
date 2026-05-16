@@ -1,9 +1,11 @@
 from typing import Any
+from time import perf_counter
 
 import httpx
 from fastapi import HTTPException
 
 from app.config import settings
+from app.utils.logging import log_external_api_interaction
 
 
 def _validate_settings() -> tuple[str, str]:
@@ -16,20 +18,32 @@ def _validate_settings() -> tuple[str, str]:
 
 def _request(method: str, path: str, *, json_body: dict[str, Any] | None = None) -> tuple[int, Any]:
     base_url, access_token = _validate_settings()
+    request_url = f"{base_url}{path}"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json; charset=utf-8",
     }
+    start = perf_counter()
 
     try:
         with httpx.Client(timeout=settings.chukou_timeout_seconds) as client:
             response = client.request(
                 method=method,
-                url=f"{base_url}{path}",
+                url=request_url,
                 headers=headers,
                 json=json_body,
             )
     except httpx.HTTPError as exc:
+        log_external_api_interaction(
+            service_name="chukou",
+            method=method,
+            url=request_url,
+            request_headers=headers,
+            request_body=json_body,
+            status_code=None,
+            elapsed_ms=(perf_counter() - start) * 1000,
+            error=str(exc),
+        )
         raise HTTPException(status_code=502, detail="Chukou API is unavailable") from exc
 
     data: Any
@@ -37,6 +51,18 @@ def _request(method: str, path: str, *, json_body: dict[str, Any] | None = None)
         data = response.json()
     except ValueError:
         data = {"raw": response.text}
+
+    log_external_api_interaction(
+        service_name="chukou",
+        method=method,
+        url=request_url,
+        request_headers=headers,
+        request_body=json_body,
+        status_code=response.status_code,
+        response_body=data,
+        elapsed_ms=(perf_counter() - start) * 1000,
+        error=None if response.status_code < 400 else "http_error_response",
+    )
 
     if response.status_code >= 400:
         message = "Chukou API request failed"

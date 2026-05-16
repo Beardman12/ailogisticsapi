@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterable
+from time import perf_counter
 from typing import Any
 
 import httpx
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.database import Conversation, Message, User
+from app.utils.logging import log_external_api_interaction
 
 
 def create_conversation(db: Session, user: User) -> Conversation:
@@ -179,21 +181,54 @@ def request_coze_reply(
         "Authorization": f"Bearer {settings.coze_token}",
         "Content-Type": "application/json",
     }
+    request_url = settings.coze_stream_run_url
+    start = perf_counter()
 
     try:
         with httpx.Client(timeout=60.0) as client:
             with client.stream(
                 "POST",
-                settings.coze_stream_run_url,
+                request_url,
                 headers=headers,
                 json=request_payload,
             ) as response:
                 response.raise_for_status()
                 events = _iter_stream_events(response.iter_lines())
+                log_external_api_interaction(
+                    service_name="coze",
+                    method="POST",
+                    url=request_url,
+                    request_headers=headers,
+                    request_body=request_payload,
+                    status_code=response.status_code,
+                    response_body=events,
+                    elapsed_ms=(perf_counter() - start) * 1000,
+                )
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text if exc.response is not None else ""
+        log_external_api_interaction(
+            service_name="coze",
+            method="POST",
+            url=request_url,
+            request_headers=headers,
+            request_body=request_payload,
+            status_code=exc.response.status_code if exc.response is not None else None,
+            response_body=detail,
+            elapsed_ms=(perf_counter() - start) * 1000,
+            error="HTTPStatusError",
+        )
         raise HTTPException(status_code=502, detail=f"Coze API request failed: {detail}") from exc
     except httpx.HTTPError as exc:
+        log_external_api_interaction(
+            service_name="coze",
+            method="POST",
+            url=request_url,
+            request_headers=headers,
+            request_body=request_payload,
+            status_code=None,
+            elapsed_ms=(perf_counter() - start) * 1000,
+            error=str(exc),
+        )
         raise HTTPException(status_code=502, detail="Coze API is unavailable") from exc
 
     text_fragments: list[str] = []

@@ -20,7 +20,7 @@
 
 **数据持久化模块**基于 SQLite 数据库实现，使用 SQLAlchemy ORM 进行数据库操作。应用启动时自动创建必要的数据库表和索引，无需手动初始化。同时提供了数据库迁移的基础结构，支持后续平滑升级到 PostgreSQL 或 MySQL 等生产级数据库。
 
-**日志与监控模块**记录所有 API 请求的详细日志，包括请求方法、路径、响应状态码和耗时。日志采用分级管理，支持DEBUG、INFO、WARNING、ERROR 四个级别。异常信息自动捕获并记录，便于问题排查和性能优化。
+**日志与监控模块**按用途拆分为应用日志、系统接口请求日志和第三方 API 交互日志。系统接口日志记录请求 ID、方法、路径、Query、请求头、请求体、响应状态码和耗时；第三方 API 日志分别记录 request 和 response 关键内容，覆盖 Coze 与出口易调用链路，并对 Authorization、Token、Cookie 等敏感字段自动脱敏。日志采用分级管理，支持 DEBUG、INFO、WARNING、ERROR 四个级别，便于问题排查和调用链追踪。
 
 ## 技术栈
 
@@ -60,13 +60,15 @@ mini_program_api/
 │   │   ├── __init__.py
 │   │   ├── auth_service.py  # 认证业务逻辑
 │   │   ├── order_service.py # 订单业务逻辑
-│   │   └── chat_service.py   # AI 客服业务逻辑
+│   │   ├── chat_service.py   # AI 客服业务逻辑
+│   │   └── chukou_service.py # 出口易 OpenAPI 封装
 │   └── utils/                # 工具函数目录
 │       ├── __init__.py
+│       ├── logging.py        # 日志配置、脱敏与结构化日志工具
 │       ├── security.py        # 安全相关工具
 │       └── helpers.py        # 通用辅助函数
 ├── data/                     # 数据存储目录
-├── logs/                      # 日志目录
+├── logs/                     # 日志目录（按 logs/yyyyMMdd/ 分文件夹）
 ├── tests/                     # 测试目录
 ├── pyproject.toml            # 项目配置文件
 ├── uv.lock                   # 依赖锁定文件
@@ -76,6 +78,22 @@ mini_program_api/
 ```
 
 ## 快速开始
+
+## 日志架构
+
+当前日志分为三类文件，均在应用启动时自动创建到 logs/yyyyMMdd 目录。
+
+- app.log：聚合应用运行日志，用于查看整体运行状态，路径为 logs/yyyyMMdd/app.log。
+- system_requests.log：记录系统接口请求日志，字段包括 request_id、method、path、query_params、client_ip、headers、request_body、status_code、elapsed_ms，路径为 logs/yyyyMMdd/system_requests.log。
+- external_api.log：记录第三方 API 调用日志，字段包括 service、method、url、request_headers、request_body、status_code、response_body、elapsed_ms、error，路径为 logs/yyyyMMdd/external_api.log。
+
+日志链路设计如下：
+
+1. FastAPI 中间件在请求进入时生成 request_id，并在响应头返回 X-Request-ID。
+2. 中间件读取系统接口请求的 Query、Header、Body，在响应返回后写入 system_requests.log。
+3. chat_service 调用 Coze stream_run 时记录完整 request/response 摘要。
+4. chukou_service 调用出口易 OpenAPI 时记录完整 request/response 摘要。
+5. Authorization、Token、Cookie 等敏感字段统一以 *** 脱敏，过长内容自动截断，避免日志失控。
 
 ### 环境准备
 

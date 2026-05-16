@@ -34,10 +34,13 @@ mini_program_api/
 │   │   ├── __init__.py
 │   │   ├── auth_service.py  # 认证服务
 │   │   ├── order_service.py # 订单服务
-│   │   └── chat_service.py  # AI 聊天服务
+│   │   ├── chat_service.py  # AI 聊天服务
+│   │   └── chukou_service.py # 出口易 OpenAPI 服务
 │   └── utils/
 │       ├── __init__.py
-│       └── helpers.py       # 工具函数
+│       ├── helpers.py       # 工具函数
+│       └── logging.py       # 日志配置与结构化日志工具
+├── logs/                    # 日志目录
 ├── tests/                   # 测试目录
 ├── data/                    # SQLite 数据库文件目录
 ├── pyproject.toml           # uv 项目配置
@@ -257,12 +260,26 @@ DATABASE_URL=sqlite:///./data/app.db
 SECRET_KEY=your-secret-key-here
 AI_API_KEY=your-ai-api-key
 AI_BASE_URL=https://api.example.com
+COZE_STREAM_RUN_URL=https://hkq24jmpqq.coze.site/stream_run
+COZE_TOKEN=your-coze-token
+COZE_PROJECT_ID=7637794329490407450
+CHUKOU_API_BASE_URL=https://openapi.chukou1.cn:82
+CHUKOU_ACCESS_TOKEN=your-chukou-access-token
+CHUKOU_TIMEOUT_SECONDS=30
 LOG_LEVEL=INFO
 ```
 
 ### 配置类
 
 使用 Pydantic Settings 管理配置，支持环境变量覆盖。
+
+### 日志架构
+
+- 应用启动时创建 logs/yyyyMMdd 目录，并注册 app.log、system_requests.log、external_api.log 三类日志文件。
+- 系统接口请求日志由 FastAPI 中间件统一记录，字段包括 request_id、method、path、query_params、headers、request_body、status_code、elapsed_ms。
+- 第三方 API 日志由 service 层统一记录，至少包含 service、method、url、request_headers、request_body、status_code、response_body、elapsed_ms、error。
+- Coze 与出口易调用均必须记录 request/response；敏感字段如 Authorization、token、cookie 必须脱敏。
+- 所有接口响应头回传 X-Request-ID，便于前后端与日志对账。
 
 ## 开发规范
 
@@ -329,7 +346,7 @@ uv run gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:80
 2. **安全性**: 生产环境需加强安全措施（密钥管理、速率限制等）
 3. **AI 服务**: 需要配置实际的 AI API 密钥
 4. **数据库**: 当前使用 SQLite，生产环境建议迁移到 PostgreSQL/MySQL
-5. **日志**: 所有操作需记录日志便于调试
+5. **日志**: 所有操作需记录日志便于调试，系统请求与第三方 API 调用日志必须可追踪且包含 request_id
 
 ## 编码优先级
 
