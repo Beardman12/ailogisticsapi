@@ -140,6 +140,11 @@ SECRET_KEY=your-secret-key-change-in-production-please-use-complex-string
 AI_API_KEY=your-ai-api-key
 AI_BASE_URL=https://api.openai.com/v1
 
+# Coze 流式聊天配置
+COZE_STREAM_RUN_URL=https://hkq24jmpqq.coze.site/stream_run
+COZE_TOKEN=your-coze-token
+COZE_PROJECT_ID=7637794329490407450
+
 # 日志级别配置
 LOG_LEVEL=INFO
 ```

@@ -237,6 +237,7 @@ class ChatMessageRequest(BaseModel):
 class ChatMessageData(BaseModel):
     conversation_id: int
     message: str
+    stream_events: list[Any] = Field(default_factory=list)
 
 
 class MessageOut(BaseModel):

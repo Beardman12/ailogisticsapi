@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     ai_api_key: str | None = None
     ai_base_url: str | None = None
+    coze_stream_run_url: str | None = None
+    coze_token: str | None = None
+    coze_project_id: int | None = None
 
     log_level: str = "INFO"
 
