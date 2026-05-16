@@ -179,6 +179,79 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - **ReDoc**: http://localhost:8000/redoc
 - **OpenAPI JSON**: http://localhost:8000/openapi.json
 
+### curl 快速调用示例
+
+以下示例默认服务运行在 `http://localhost:8000`。
+
+```bash
+# 1) 基础地址
+BASE_URL="http://localhost:8000"
+
+# 2) 健康检查
+curl -X GET "$BASE_URL/health"
+
+# 3) 登录（获取 token）
+curl -X POST "$BASE_URL/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "code": "demo-login-code",
+        "nickname": "测试用户",
+        "avatar_url": "https://example.com/avatar.png"
+    }'
+
+# 将登录响应中的 data.token 复制到这里
+TOKEN="your-jwt-token"
+
+# 4) 获取当前用户信息
+curl -X GET "$BASE_URL/api/auth/profile" \
+    -H "Authorization: Bearer $TOKEN"
+
+# 5) 创建订单
+curl -X POST "$BASE_URL/api/orders" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "items": [
+            {"product_name": "商品A", "quantity": 2, "price": 50.00},
+            {"product_name": "商品B", "quantity": 1, "price": 100.00}
+        ],
+        "total_amount": 200.00
+    }'
+
+# 6) 查询订单列表
+curl -X GET "$BASE_URL/api/orders?status=pending&skip=0&limit=20" \
+    -H "Authorization: Bearer $TOKEN"
+
+# 7) 查询订单详情（将 1 替换为真实 order_id）
+curl -X GET "$BASE_URL/api/orders/1" \
+    -H "Authorization: Bearer $TOKEN"
+
+# 8) 完成订单（将 1 替换为真实 order_id）
+curl -X PUT "$BASE_URL/api/orders/1/complete" \
+    -H "Authorization: Bearer $TOKEN"
+
+# 9) 取消订单（将 1 替换为真实 order_id）
+curl -X PUT "$BASE_URL/api/orders/1/cancel" \
+    -H "Authorization: Bearer $TOKEN"
+
+# 10) 创建聊天会话
+curl -X POST "$BASE_URL/api/chat/history" \
+    -H "Authorization: Bearer $TOKEN"
+
+# 11) 发送聊天消息（将 1 替换为真实 conversation_id）
+curl -X POST "$BASE_URL/api/chat/message" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "message": "我想查询我的订单状态",
+        "conversation_id": 1
+    }'
+
+# 12) 查询聊天历史（将 1 替换为真实 conversation_id）
+curl -X GET "$BASE_URL/api/chat/history/1" \
+    -H "Authorization: Bearer $TOKEN"
+```
+
 ### 认证相关接口
 
 **登录接口**是小程序接入的第一个接口。小程序通过微信授权获取 code 后，调用此接口完成用户认证。接口会验证 code 的有效性，检查用户是否存在，不存在则自动创建。用户认证成功后返回 JWT token，后续请求需要在请求头中携带此 token。
