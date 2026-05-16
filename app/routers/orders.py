@@ -24,13 +24,13 @@ def create_order(
 
 @router.get("", response_model=ApiResponse)
 def list_orders(
-    status: str | None = Query(default=None),
+    order_status: str | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse:
-    orders, total = order_service.list_orders(db, current_user, status, skip, limit)
+    orders, total = order_service.list_orders(db, current_user, order_status, skip, limit)
     data = OrderListData(
         items=[OrderListItem.model_validate(item) for item in orders],
         total=total,

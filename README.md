@@ -211,15 +211,63 @@ curl -X POST "$BASE_URL/api/orders" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
+        "order": {
+            "package_id": "PKG202605160001",
+            "platform_order_no": "PLAT-10001",
+            "service_code": "CUE",
+            "location_code": "GZ",
+            "submit_later": false,
+            "user_remark": "易碎品请轻拿轻放",
+            "payable_amount": 39.80,
+            "payment_currency": "CNY"
+        },
+        "sender": {
+            "sender_name": "张三",
+            "sender_phone_code": "+86",
+            "sender_phone": "13800138000",
+            "pickup_point_id": 1,
+            "pickup_point_name": "广州天河揽收点",
+            "domestic_tracking_no": "SF1234567890"
+        },
+        "recipient": {
+            "recipient_name": "David Mcaffee",
+            "phone_code": "+1",
+            "phone": "9376898216",
+            "country_code": "US",
+            "country_name": "United States",
+            "province": "Florida",
+            "city": "Coral Springs",
+            "district": "",
+            "street1": "9110 NW 21st street",
+            "street2": "",
+            "postcode": "45429",
+            "email": "david@example.com",
+            "id_type": "PASSPORT",
+            "id_number": "P12345678"
+        },
+        "parcel": {
+            "cargo_type": "general",
+            "weight_g_input": 600,
+            "length_cm_input": 25,
+            "width_cm_input": 10,
+            "height_cm_input": 20
+        },
         "items": [
-            {"product_name": "商品A", "quantity": 2, "price": 50.00},
-            {"product_name": "商品B", "quantity": 1, "price": 100.00}
-        ],
-        "total_amount": 200.00
+            {
+                "line_no": 1,
+                "goods_desc_cn": "小梦书包",
+                "goods_desc_en": "bag",
+                "unit_price_usd": 5.00,
+                "quantity": 2,
+                "total_price_usd": 10.00,
+                "sku_code": "bag-y001",
+                "hs_code": "42021290"
+            }
+        ]
     }'
 
 # 6) 查询订单列表
-curl -X GET "$BASE_URL/api/orders?status=pending&skip=0&limit=20" \
+curl -X GET "$BASE_URL/api/orders?order_status=submitted&skip=0&limit=20" \
     -H "Authorization: Bearer $TOKEN"
 
 # 7) 查询订单详情（将 1 替换为真实 order_id）
@@ -312,7 +360,54 @@ Authorization: Bearer <token>
 
 ### 订单相关接口
 
-**创建订单接口**用于生成新的订单。请求需要携带订单商品信息和总金额，系统会生成唯一的订单号并记录订单详情。
+**创建订单接口**用于生成新的订单。请求体采用真实业务结构，包含订单主信息、寄件方、收件方、包裹信息和货品明细。
+
+字段必填矩阵（创建订单）：
+
+| 路径 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| order.package_id | 是 | string | 包裹唯一标识，幂等关键 |
+| order.platform_order_no | 否 | string | 平台订单号 |
+| order.service_code | 是 | string | 物流服务代码 |
+| order.location_code | 否 | string | 处理点/仓代码 |
+| order.submit_later | 否 | boolean | 是否稍后提审，默认 false |
+| order.user_remark | 否 | string | 用户备注 |
+| order.payable_amount | 是 | number | 应付金额 |
+| order.payment_currency | 是 | string | 货币，如 CNY |
+| sender.sender_name | 是 | string | 寄件人姓名 |
+| sender.sender_phone_code | 是 | string | 寄件方国家区号 |
+| sender.sender_phone | 是 | string | 寄件方手机号 |
+| sender.pickup_point_id | 否 | integer | 揽收点 ID |
+| sender.pickup_point_name | 是 | string | 揽收点名称 |
+| sender.domestic_tracking_no | 否 | string | 国内快递单号 |
+| recipient.recipient_name | 是 | string | 收件人姓名 |
+| recipient.phone_code | 是 | string | 收件方国家区号 |
+| recipient.phone | 是 | string | 收件方电话 |
+| recipient.country_code | 是 | string(2) | 国家二字码，会自动转大写 |
+| recipient.country_name | 是 | string | 国家名称 |
+| recipient.province | 是 | string | 省/州 |
+| recipient.city | 是 | string | 城市 |
+| recipient.district | 否 | string | 区县 |
+| recipient.street1 | 是 | string | 详细地址 |
+| recipient.street2 | 否 | string | 地址补充 |
+| recipient.postcode | 是 | string | 邮编 |
+| recipient.email | 否 | string | 邮箱 |
+| recipient.id_type | 是 | string | 证件类型 |
+| recipient.id_number | 是 | string | 证件号 |
+| parcel.cargo_type | 是 | string | 货物类型 |
+| parcel.weight_g_input | 是 | integer | 重量(g)，>0 |
+| parcel.length_cm_input | 是 | number | 长(cm)，>0 |
+| parcel.width_cm_input | 是 | number | 宽(cm)，>0 |
+| parcel.height_cm_input | 是 | number | 高(cm)，>0 |
+| items | 是 | array | 至少 1 条 |
+| items[].line_no | 是 | integer | 行号，需唯一且>=1 |
+| items[].goods_desc_cn | 是 | string | 中文品名 |
+| items[].goods_desc_en | 是 | string | 英文品名 |
+| items[].unit_price_usd | 是 | number | USD 单价，>0 |
+| items[].quantity | 是 | integer | 数量，>=1 |
+| items[].total_price_usd | 是 | number | 小计，必须=单价*数量 |
+| items[].sku_code | 否 | string | SKU |
+| items[].hs_code | 否 | string | HS 编码 |
 
 ```
 POST /api/orders
@@ -321,34 +416,127 @@ Content-Type: application/json
 
 请求体：
 {
+    "order": {
+        "package_id": "PKG202605160001",
+        "platform_order_no": "PLAT-10001",
+        "service_code": "CUE",
+        "location_code": "GZ",
+        "submit_later": false,
+        "user_remark": "易碎品请轻拿轻放",
+        "payable_amount": 39.80,
+        "payment_currency": "CNY"
+    },
+    "sender": {
+        "sender_name": "张三",
+        "sender_phone_code": "+86",
+        "sender_phone": "13800138000",
+        "pickup_point_id": 1,
+        "pickup_point_name": "广州天河揽收点",
+        "domestic_tracking_no": "SF1234567890"
+    },
+    "recipient": {
+        "recipient_name": "David Mcaffee",
+        "phone_code": "+1",
+        "phone": "9376898216",
+        "country_code": "US",
+        "country_name": "United States",
+        "province": "Florida",
+        "city": "Coral Springs",
+        "district": "",
+        "street1": "9110 NW 21st street",
+        "street2": "",
+        "postcode": "45429",
+        "email": "david@example.com",
+        "id_type": "PASSPORT",
+        "id_number": "P12345678"
+    },
+    "parcel": {
+        "cargo_type": "general",
+        "weight_g_input": 600,
+        "length_cm_input": 25,
+        "width_cm_input": 10,
+        "height_cm_input": 20
+    },
     "items": [
         {
-            "product_name": "商品A",
+            "line_no": 1,
+            "goods_desc_cn": "小梦书包",
+            "goods_desc_en": "bag",
+            "unit_price_usd": 5.00,
             "quantity": 2,
-            "price": 50.00
-        },
-        {
-            "product_name": "商品B",
-            "quantity": 1,
-            "price": 100.00
+            "total_price_usd": 10.00,
+            "sku_code": "bag-y001",
+            "hs_code": "42021290"
         }
-    ],
-    "total_amount": 200.00
+    ]
 }
 
 响应示例：
 {
     "code": 0,
-    "message": "订单创建成功",
+    "message": "Order created",
     "data": {
         "id": 1,
-        "order_no": "ORD202401010001",
+        "order_no": "ORD202605160001",
         "user_id": 1,
-        "total_amount": "200.00",
-        "status": "pending",
+        "package_id": "PKG202605160001",
+        "platform_order_no": "PLAT-10001",
+        "service_code": "CUE",
+        "location_code": "GZ",
+        "submit_later": false,
+        "order_status": "submitted",
+        "payment_status": "unpaid",
+        "payable_amount": "39.80",
+        "payment_currency": "CNY",
+        "user_remark": "易碎品请轻拿轻放",
+        "total_amount": "39.80",
+        "sender": {
+            "sender_name": "张三",
+            "sender_phone_code": "+86",
+            "sender_phone": "13800138000",
+            "pickup_point_id": 1,
+            "pickup_point_name": "广州天河揽收点",
+            "domestic_tracking_no": "SF1234567890"
+        },
+        "recipient": {
+            "recipient_name": "David Mcaffee",
+            "phone_code": "+1",
+            "phone": "9376898216",
+            "country_code": "US",
+            "country_name": "United States",
+            "province": "Florida",
+            "city": "Coral Springs",
+            "district": "",
+            "street1": "9110 NW 21st street",
+            "street2": "",
+            "postcode": "45429",
+            "email": "david@example.com",
+            "id_type": "PASSPORT",
+            "id_number": "P12345678"
+        },
+        "parcel": {
+            "cargo_type": "general",
+            "weight_g_input": 600,
+            "length_cm_input": "25.00",
+            "width_cm_input": "10.00",
+            "height_cm_input": "20.00",
+            "weight_g_verified": null,
+            "length_cm_verified": null,
+            "width_cm_verified": null,
+            "height_cm_verified": null,
+            "charged_weight_g": null
+        },
         "items": [
-            {"product_name": "商品A", "quantity": 2, "price": "50.00"},
-            {"product_name": "商品B", "quantity": 1, "price": "100.00"}
+            {
+                "line_no": 1,
+                "goods_desc_cn": "小梦书包",
+                "goods_desc_en": "bag",
+                "unit_price_usd": "5.00",
+                "quantity": 2,
+                "total_price_usd": "10.00",
+                "sku_code": "bag-y001",
+                "hs_code": "42021290"
+            }
         ],
         "created_at": "2024-01-01T12:00:00",
         "updated_at": "2024-01-01T12:00:00"
@@ -359,7 +547,7 @@ Content-Type: application/json
 **订单列表接口**用于获取当前用户的所有订单。支持分页查询和状态筛选。
 
 ```
-GET /api/orders?status=pending&skip=0&limit=20
+GET /api/orders?order_status=submitted&skip=0&limit=20
 Authorization: Bearer <token>
 
 响应示例：
@@ -370,9 +558,11 @@ Authorization: Bearer <token>
         "items": [
             {
                 "id": 1,
-                "order_no": "ORD202401010001",
-                "total_amount": "200.00",
-                "status": "pending",
+                "order_no": "ORD202605160001",
+                "package_id": "PKG202605160001",
+                "service_code": "CUE",
+                "total_amount": "39.80",
+                "order_status": "submitted",
                 "created_at": "2024-01-01T12:00:00"
             }
         ],
@@ -395,12 +585,66 @@ Authorization: Bearer <token>
     "message": "success",
     "data": {
         "id": 1,
-        "order_no": "ORD202401010001",
+        "order_no": "ORD202605160001",
         "user_id": 1,
-        "total_amount": "200.00",
-        "status": "completed",
+        "package_id": "PKG202605160001",
+        "platform_order_no": "PLAT-10001",
+        "service_code": "CUE",
+        "location_code": "GZ",
+        "submit_later": false,
+        "order_status": "success",
+        "payment_status": "unpaid",
+        "payable_amount": "39.80",
+        "payment_currency": "CNY",
+        "user_remark": "易碎品请轻拿轻放",
+        "total_amount": "39.80",
+        "sender": {
+            "sender_name": "张三",
+            "sender_phone_code": "+86",
+            "sender_phone": "13800138000",
+            "pickup_point_id": 1,
+            "pickup_point_name": "广州天河揽收点",
+            "domestic_tracking_no": "SF1234567890"
+        },
+        "recipient": {
+            "recipient_name": "David Mcaffee",
+            "phone_code": "+1",
+            "phone": "9376898216",
+            "country_code": "US",
+            "country_name": "United States",
+            "province": "Florida",
+            "city": "Coral Springs",
+            "district": "",
+            "street1": "9110 NW 21st street",
+            "street2": "",
+            "postcode": "45429",
+            "email": "david@example.com",
+            "id_type": "PASSPORT",
+            "id_number": "P12345678"
+        },
+        "parcel": {
+            "cargo_type": "general",
+            "weight_g_input": 600,
+            "length_cm_input": "25.00",
+            "width_cm_input": "10.00",
+            "height_cm_input": "20.00",
+            "weight_g_verified": null,
+            "length_cm_verified": null,
+            "width_cm_verified": null,
+            "height_cm_verified": null,
+            "charged_weight_g": null
+        },
         "items": [
-            {"product_name": "商品A", "quantity": 2, "price": "50.00"}
+            {
+                "line_no": 1,
+                "goods_desc_cn": "小梦书包",
+                "goods_desc_en": "bag",
+                "unit_price_usd": "5.00",
+                "quantity": 2,
+                "total_price_usd": "10.00",
+                "sku_code": "bag-y001",
+                "hs_code": "42021290"
+            }
         ],
         "created_at": "2024-01-01T12:00:00",
         "updated_at": "2024-01-01T12:30:00"
@@ -417,7 +661,7 @@ Authorization: Bearer <token>
 响应示例：
 {
     "code": 0,
-    "message": "订单已完成"
+    "message": "Order completed"
 }
 ```
 
@@ -430,7 +674,7 @@ Authorization: Bearer <token>
 响应示例：
 {
     "code": 0,
-    "message": "订单已取消"
+    "message": "Order cancelled"
 }
 ```
 

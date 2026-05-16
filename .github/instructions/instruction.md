@@ -75,41 +75,91 @@ users:
 
 ### 2. 订单管理模块
 
-**功能描述**: 创建订单、查询订单列表、手动完成订单。
+**功能描述**: 创建订单、查询订单列表、手动完成订单，按真实业务入参进行落库。
 
 **数据模型**:
 ```python
-# 订单表
+# 订单主表
 orders:
   - id: INTEGER PRIMARY KEY
-  - order_no: VARCHAR(50) UNIQUE  # 订单号
+  - order_no: VARCHAR(50) UNIQUE
   - user_id: INTEGER FOREIGN KEY
+  - package_id: VARCHAR(64) UNIQUE  # 幂等关键
+  - platform_order_no: VARCHAR(64)
+  - service_code: VARCHAR(32)
+  - location_code: VARCHAR(20)
+  - submit_later: BOOLEAN
+  - order_status: VARCHAR(32)  # draft/submitted/processing/success/failed/cancelled
+  - payment_status: VARCHAR(32)  # unpaid/paying/paid/failed/refunded
+  - payable_amount: DECIMAL(10,2)
+  - payment_currency: VARCHAR(8)
+  - user_remark: VARCHAR(500)
   - total_amount: DECIMAL(10,2)
-  - status: VARCHAR(20)  # pending/paid/completed/cancelled
   - created_at: DATETIME
   - updated_at: DATETIME
 
-# 订单项表
+# 寄件方信息
+order_sender:
+  - id: INTEGER PRIMARY KEY
+  - order_id: INTEGER UNIQUE FOREIGN KEY
+  - sender_name: VARCHAR(100)
+  - sender_phone_code: VARCHAR(8)
+  - sender_phone: VARCHAR(32)
+  - pickup_point_id: INTEGER
+  - pickup_point_name: VARCHAR(100)
+  - domestic_tracking_no: VARCHAR(64)
+
+# 收件方信息
+order_recipient:
+  - id: INTEGER PRIMARY KEY
+  - order_id: INTEGER UNIQUE FOREIGN KEY
+  - recipient_name: VARCHAR(100)
+  - phone_code: VARCHAR(8)
+  - phone: VARCHAR(32)
+  - country_code: VARCHAR(2)
+  - country_name: VARCHAR(64)
+  - province/city/district/street1/street2/postcode/email
+  - id_type: VARCHAR(32)
+  - id_number: VARCHAR(64)
+
+# 包裹信息
+order_parcel:
+  - id: INTEGER PRIMARY KEY
+  - order_id: INTEGER UNIQUE FOREIGN KEY
+  - cargo_type: VARCHAR(32)
+  - weight_g_input: INTEGER
+  - length_cm_input: DECIMAL(10,2)
+  - width_cm_input: DECIMAL(10,2)
+  - height_cm_input: DECIMAL(10,2)
+
+# 货品明细
 order_items:
   - id: INTEGER PRIMARY KEY
   - order_id: INTEGER FOREIGN KEY
-  - product_name: VARCHAR(200)
+  - line_no: INTEGER
+  - goods_desc_cn: VARCHAR(200)
+  - goods_desc_en: VARCHAR(200)
+  - unit_price_usd: DECIMAL(10,2)
   - quantity: INTEGER
-  - price: DECIMAL(10,2)
+  - total_price_usd: DECIMAL(10,2)
+  - sku_code: VARCHAR(64)
+  - hs_code: VARCHAR(32)
 ```
 
 **API 端点**:
 - `POST /api/orders` - 创建订单
-- `GET /api/orders` - 获取订单列表
+- `GET /api/orders?order_status=<status>` - 获取订单列表
 - `GET /api/orders/{order_id}` - 获取订单详情
 - `PUT /api/orders/{order_id}/complete` - 完成订单（POC 手动完成）
 - `PUT /api/orders/{order_id}/cancel` - 取消订单
 
 **业务逻辑**:
 1. 创建订单时生成唯一订单号
-2. 订单状态流转：pending → paid → completed/cancelled
-3. POC 版本支持手动完成订单（模拟支付成功）
-4. 用户只能查看自己的订单
+2. `package_id` 必填且唯一，重复提交直接拒绝
+3. 入参为五段式：`order/sender/recipient/parcel/items`
+4. 关键校验：`items.line_no` 唯一；`total_price_usd = unit_price_usd * quantity`
+5. 状态流转：`submitted -> success/cancelled`
+6. 用户只能查看自己的订单
 
 ### 3. AI 客服对话模块
 

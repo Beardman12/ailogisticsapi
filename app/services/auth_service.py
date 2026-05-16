@@ -37,13 +37,13 @@ def login(db: Session, payload: LoginRequest) -> LoginData:
     total_count = db.query(func.count(Order.id)).filter(Order.user_id == user.id).scalar() or 0
     pending_count = (
         db.query(func.count(Order.id))
-        .filter(Order.user_id == user.id, Order.status == "pending")
+        .filter(Order.user_id == user.id, Order.order_status.in_(["draft", "submitted", "processing"]))
         .scalar()
         or 0
     )
     completed_count = (
         db.query(func.count(Order.id))
-        .filter(Order.user_id == user.id, Order.status == "completed")
+        .filter(Order.user_id == user.id, Order.order_status == "success")
         .scalar()
         or 0
     )

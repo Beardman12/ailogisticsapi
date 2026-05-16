@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ApiResponse(BaseModel):
@@ -41,22 +41,144 @@ class LoginData(BaseModel):
 
 
 class OrderItemCreate(BaseModel):
-    product_name: str
+    line_no: int = Field(ge=1)
+    goods_desc_cn: str
+    goods_desc_en: str
+    unit_price_usd: Decimal = Field(gt=0)
     quantity: int = Field(ge=1)
-    price: Decimal = Field(gt=0)
+    total_price_usd: Decimal = Field(gt=0)
+    sku_code: str | None = None
+    hs_code: str | None = None
+
+
+class OrderCoreCreate(BaseModel):
+    package_id: str = Field(min_length=1, max_length=64)
+    platform_order_no: str | None = Field(default=None, max_length=64)
+    service_code: str = Field(min_length=1, max_length=32)
+    location_code: str | None = Field(default=None, max_length=20)
+    submit_later: bool = False
+    user_remark: str | None = Field(default=None, max_length=500)
+    payable_amount: Decimal = Field(gt=0)
+    payment_currency: str = Field(min_length=3, max_length=8)
+
+
+class OrderSenderCreate(BaseModel):
+    sender_name: str
+    sender_phone_code: str
+    sender_phone: str
+    pickup_point_id: int | None = None
+    pickup_point_name: str
+    domestic_tracking_no: str | None = None
+
+
+class OrderRecipientCreate(BaseModel):
+    recipient_name: str
+    phone_code: str
+    phone: str
+    country_code: str = Field(min_length=2, max_length=2)
+    country_name: str
+    province: str
+    city: str
+    district: str | None = None
+    street1: str
+    street2: str | None = None
+    postcode: str
+    email: str | None = None
+    id_type: str
+    id_number: str
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, value: str) -> str:
+        return value.upper()
+
+
+class OrderParcelCreate(BaseModel):
+    cargo_type: str
+    weight_g_input: int = Field(gt=0)
+    length_cm_input: Decimal = Field(gt=0)
+    width_cm_input: Decimal = Field(gt=0)
+    height_cm_input: Decimal = Field(gt=0)
 
 
 class OrderCreateRequest(BaseModel):
+    order: OrderCoreCreate
+    sender: OrderSenderCreate
+    recipient: OrderRecipientCreate
+    parcel: OrderParcelCreate
     items: list[OrderItemCreate] = Field(min_length=1)
-    total_amount: Decimal = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_items(self) -> "OrderCreateRequest":
+        line_nos = [item.line_no for item in self.items]
+        if len(line_nos) != len(set(line_nos)):
+            raise ValueError("items.line_no must be unique")
+
+        for item in self.items:
+            expected_total = item.unit_price_usd * item.quantity
+            if item.total_price_usd != expected_total:
+                raise ValueError(
+                    f"items[{item.line_no}].total_price_usd must equal unit_price_usd * quantity"
+                )
+        return self
 
 
 class OrderItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    product_name: str
+    line_no: int
+    goods_desc_cn: str
+    goods_desc_en: str
+    unit_price_usd: Decimal
     quantity: int
-    price: Decimal
+    total_price_usd: Decimal
+    sku_code: str | None
+    hs_code: str | None
+
+
+class OrderSenderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sender_name: str
+    sender_phone_code: str
+    sender_phone: str
+    pickup_point_id: int | None
+    pickup_point_name: str
+    domestic_tracking_no: str | None
+
+
+class OrderRecipientOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    recipient_name: str
+    phone_code: str
+    phone: str
+    country_code: str
+    country_name: str
+    province: str
+    city: str
+    district: str | None
+    street1: str
+    street2: str | None
+    postcode: str
+    email: str | None
+    id_type: str
+    id_number: str
+
+
+class OrderParcelOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    cargo_type: str
+    weight_g_input: int
+    length_cm_input: Decimal
+    width_cm_input: Decimal
+    height_cm_input: Decimal
+    weight_g_verified: int | None
+    length_cm_verified: Decimal | None
+    width_cm_verified: Decimal | None
+    height_cm_verified: Decimal | None
+    charged_weight_g: int | None
 
 
 class OrderOut(BaseModel):
@@ -65,8 +187,20 @@ class OrderOut(BaseModel):
     id: int
     order_no: str
     user_id: int
+    package_id: str
+    platform_order_no: str | None
+    service_code: str
+    location_code: str | None
+    submit_later: bool
+    order_status: str
+    payment_status: str
+    payable_amount: Decimal | None
+    payment_currency: str | None
+    user_remark: str | None
     total_amount: Decimal
-    status: str
+    sender: OrderSenderOut | None
+    recipient: OrderRecipientOut | None
+    parcel: OrderParcelOut | None
     items: list[OrderItemOut]
     created_at: datetime
     updated_at: datetime
@@ -77,8 +211,10 @@ class OrderListItem(BaseModel):
 
     id: int
     order_no: str
+    package_id: str
+    service_code: str
     total_amount: Decimal
-    status: str
+    order_status: str
     created_at: datetime
 
 
