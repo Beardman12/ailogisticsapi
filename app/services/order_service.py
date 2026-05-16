@@ -1,8 +1,12 @@
+from datetime import datetime
+from decimal import Decimal
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.database import Order, OrderItem, OrderParcel, OrderRecipient, OrderSender, User
 from app.models.schemas import OrderCreateRequest
+from app.services import chukou_service
 from app.utils.helpers import generate_order_no
 
 
@@ -109,10 +113,146 @@ def get_order_for_user(db: Session, user: User, order_id: int) -> Order:
     return order
 
 
+def _decimal_to_float(value: Decimal | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _build_submit_payload(order: Order) -> dict:
+    if not order.sender or not order.recipient or not order.parcel or not order.items:
+        raise HTTPException(status_code=400, detail="Order data is incomplete")
+
+    ship_to_address = {
+        "Country": order.recipient.country_code,
+        "Province": order.recipient.province,
+        "City": order.recipient.city,
+        "District": order.recipient.district,
+        "Street1": order.recipient.street1,
+        "Street2": order.recipient.street2,
+        "Postcode": order.recipient.postcode,
+        "Contact": order.recipient.recipient_name,
+        "Phone": f"{order.recipient.phone_code}{order.recipient.phone}",
+        "Email": order.recipient.email,
+        "IDNumber": order.recipient.id_number,
+    }
+
+    sender = {
+        "Contact": order.sender.sender_name,
+        "Phone": f"{order.sender.sender_phone_code}{order.sender.sender_phone}",
+    }
+
+    skus = []
+    for item in order.items:
+        skus.append(
+            {
+                "Sku": item.sku_code or f"ITEM-{item.line_no}",
+                "Quantity": item.quantity,
+                "Weight": order.parcel.weight_g_input,
+                "DeclareValue": _decimal_to_float(item.unit_price_usd),
+                "DeclareNameEn": item.goods_desc_en,
+                "DeclareNameCn": item.goods_desc_cn,
+                "ProductName": item.goods_desc_en,
+                "Price": _decimal_to_float(item.unit_price_usd),
+                "HsCode": item.hs_code,
+            }
+        )
+
+    package = {
+        "PackageId": order.package_id,
+        "PlatformOrderNo": order.platform_order_no,
+        "ServiceCode": order.service_code,
+        "Weight": order.parcel.weight_g_input,
+        "Length": _decimal_to_float(order.parcel.length_cm_input),
+        "Width": _decimal_to_float(order.parcel.width_cm_input),
+        "Height": _decimal_to_float(order.parcel.height_cm_input),
+        "SellPrice": _decimal_to_float(order.total_amount),
+        "SellPriceCurrency": order.payment_currency,
+        "ImportTrackingNumber": order.sender.domestic_tracking_no,
+        "Custom": order.user_remark,
+        "Remark": order.user_remark,
+        "ShipToAddress": {k: v for k, v in ship_to_address.items() if v not in (None, "")},
+        "Sender": {k: v for k, v in sender.items() if v not in (None, "")},
+        "Skus": skus,
+    }
+
+    payload = {
+        "Location": order.location_code,
+        "Package": {k: v for k, v in package.items() if v is not None},
+        "Remark": order.user_remark,
+        "SubmitLater": order.submit_later,
+    }
+    return {k: v for k, v in payload.items() if v is not None}
+
+
+def _apply_status_snapshot(order: Order, status_payload: dict) -> None:
+    chukou_status = status_payload.get("Status")
+    tracking_number = status_payload.get("TrackingNumber")
+
+    order.chukou_status = chukou_status
+    order.tracking_number = tracking_number
+    order.extra_track_number = status_payload.get("ExtraTrackNumber")
+    order.shipping_provider = status_payload.get("ShippingProvider")
+
+    create_failed = status_payload.get("CreateFailedReason")
+    if isinstance(create_failed, dict):
+        order.submit_failed_code = create_failed.get("ReasonCode")
+        order.submit_failed_message = create_failed.get("ReasonText")
+    else:
+        order.submit_failed_code = None
+        order.submit_failed_message = None
+
+    if chukou_status == "Created" and tracking_number:
+        order.order_status = "success"
+        order.success_at = datetime.now()
+        return
+
+    if create_failed:
+        order.order_status = "failed"
+        return
+
+    order.order_status = "creating"
+
+
 def complete_order(db: Session, order: Order) -> None:
     if order.order_status in {"cancelled", "success"}:
         raise HTTPException(status_code=400, detail="Order cannot be completed")
-    order.order_status = "success"
+
+    payload = _build_submit_payload(order)
+    status_code, response_data = chukou_service.create_direct_express_order(payload)
+
+    order.submitted_at = datetime.now()
+    order.order_status = "submitted"
+    order.chukou_status = "Submitted"
+    order.submit_failed_code = None
+    order.submit_failed_message = None
+
+    # 200 means duplicate submit, 201 means accepted; both are non-error according to upstream API.
+    if status_code not in {200, 201}:
+        raise HTTPException(status_code=502, detail="Unexpected status from Chukou create order API")
+
+    if isinstance(response_data, dict):
+        errors = response_data.get("Errors")
+        if isinstance(errors, list) and errors:
+            first = errors[0]
+            if isinstance(first, dict):
+                order.submit_failed_code = first.get("Code")
+                order.submit_failed_message = first.get("Message")
+                order.order_status = "failed"
+                db.commit()
+                raise HTTPException(status_code=400, detail=order.submit_failed_message or "Submit failed")
+
+    # Try a single status query right after submit. If upstream has not finished async processing,
+    # keep local order in creating state and let later polling endpoint/scheduler continue.
+    try:
+        _, status_payload = chukou_service.get_direct_express_order_status(order.package_id)
+        if isinstance(status_payload, dict):
+            _apply_status_snapshot(order, status_payload)
+        else:
+            order.order_status = "creating"
+    except HTTPException:
+        order.order_status = "creating"
+
     db.commit()
 
 

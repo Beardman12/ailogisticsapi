@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     coze_token: str | None = None
     coze_project_id: int | None = None
 
+    chukou_api_base_url: str | None = None
+    chukou_access_token: str | None = None
+    chukou_timeout_seconds: float = 30.0
+
     log_level: str = "INFO"
 
 

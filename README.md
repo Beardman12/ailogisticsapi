@@ -145,6 +145,11 @@ COZE_STREAM_RUN_URL=https://hkq24jmpqq.coze.site/stream_run
 COZE_TOKEN=your-coze-token
 COZE_PROJECT_ID=7637794329490407450
 
+# 出口易 OpenAPI 配置
+CHUKOU_API_BASE_URL=https://openapi.chukou1.cn:82
+CHUKOU_ACCESS_TOKEN=your-chukou-access-token
+CHUKOU_TIMEOUT_SECONDS=30
+
 # 日志级别配置
 LOG_LEVEL=INFO
 ```
