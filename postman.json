@@ -1,0 +1,174 @@
+{
+  "info": {
+    "_postman_id": "d8e6d0d4-7e7d-4a9e-96c0-ailogisticsapi",
+    "name": "AILogistics Order E2E",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "packageId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"postman-e2e-login\",\n  \"nickname\": \"postman-user\",\n  \"avatar_url\": null\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "if (res && res.data && res.data.token) {",
+              "    pm.collectionVariables.set('token', res.data.token);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Create Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "orders"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order\": {\n    \"package_id\": \"{{packageId}}\",\n    \"platform_order_no\": null,\n    \"service_code\": \"CUE\",\n    \"location_code\": \"GZ\",\n    \"submit_later\": false,\n    \"user_remark\": \"remark\",\n    \"payable_amount\": 20,\n    \"payment_currency\": \"CNY\"\n  },\n  \"sender\": {\n    \"sender_name\": \"Sender Demo\",\n    \"sender_phone_code\": \"+86\",\n    \"sender_phone\": \"13800138000\",\n    \"pickup_point_id\": 1,\n    \"pickup_point_name\": \"GZ Pickup\",\n    \"domestic_tracking_no\": null\n  },\n  \"recipient\": {\n    \"recipient_name\": \"David Mcaffee\",\n    \"phone_code\": \"\",\n    \"phone\": \"937-689-8216\",\n    \"country_code\": \"US\",\n    \"country_name\": \"United States\",\n    \"province\": \"Florida\",\n    \"city\": \"Coral Springs\",\n    \"district\": null,\n    \"street1\": \"9110 NW 21st street \",\n    \"street2\": null,\n    \"postcode\": \"45429\",\n    \"email\": \"23541566@gmail.com\",\n    \"id_type\": \"DNI\",\n    \"id_number\": \"12345678\"\n  },\n  \"parcel\": {\n    \"cargo_type\": \"general\",\n    \"weight_g_input\": 600,\n    \"length_cm_input\": 25,\n    \"width_cm_input\": 10,\n    \"height_cm_input\": 20\n  },\n  \"items\": [\n    {\n      \"line_no\": 1,\n      \"goods_desc_cn\": \"小梦书包\",\n      \"goods_desc_en\": \"bag\",\n      \"unit_price_usd\": 5,\n      \"quantity\": 1,\n      \"total_price_usd\": 5,\n      \"sku_code\": \"bag-y001\",\n      \"hs_code\": null\n    },\n    {\n      \"line_no\": 2,\n      \"goods_desc_cn\": \"小梦书包\",\n      \"goods_desc_en\": \"bag\",\n      \"unit_price_usd\": 5,\n      \"quantity\": 2,\n      \"total_price_usd\": 10,\n      \"sku_code\": \"bag-y002\",\n      \"hs_code\": null\n    }\n  ]\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const packageId = 'SMT' + Date.now();",
+              "pm.collectionVariables.set('packageId', packageId);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Create order status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "if (res && res.data && res.data.id) {",
+              "    pm.collectionVariables.set('orderId', String(res.data.id));",
+              "}",
+              "",
+              "pm.test('orderId saved', function () {",
+              "    pm.expect(pm.collectionVariables.get('orderId')).to.not.eql('');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Complete Order",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/{{orderId}}/complete",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{orderId}}",
+            "complete"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Complete order status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "console.log('Complete order response:', res);"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
