@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_days: int = 7
 
+    wechat_appid: str | None = None
+    wechat_appsecret: str | None = None
+    wechat_api_base_url: str = "https://api.weixin.qq.com"
+    wechat_api_timeout_seconds: float = 10.0
+
     ai_api_key: str | None = None
     ai_base_url: str | None = None
     coze_stream_run_url: str | None = None

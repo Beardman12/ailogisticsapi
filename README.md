@@ -154,6 +154,12 @@ DATABASE_URL=sqlite:///./data/app.db
 # JWT 密钥配置（生产环境请使用复杂的随机字符串）
 SECRET_KEY=your-secret-key-change-in-production-please-use-complex-string
 
+# 微信小程序登录配置
+WECHAT_APPID=your-wechat-appid
+WECHAT_APPSECRET=your-wechat-appsecret
+WECHAT_API_BASE_URL=https://api.weixin.qq.com
+WECHAT_API_TIMEOUT_SECONDS=10
+
 # AI 服务配置（可选，留空则使用模拟响应）
 AI_API_KEY=your-ai-api-key
 AI_BASE_URL=https://api.openai.com/v1
@@ -351,7 +357,7 @@ Content-Type: application/json
         "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
         "user": {
             "id": 1,
-            "union_id": "oXXXXXXXXXXXXXX",
+            "openid": "oXXXXXXXXXXXXXX",
             "nickname": "用户名",
             "avatar_url": "https://example.com/avatar.png",
             "created_at": "2024-01-01T00:00:00"
@@ -377,7 +383,7 @@ Authorization: Bearer <token>
     "message": "success",
     "data": {
         "id": 1,
-        "union_id": "oXXXXXXXXXXXXXX",
+        "openid": "oXXXXXXXXXXXXXX",
         "nickname": "用户名",
         "avatar_url": "https://example.com/avatar.png",
         "created_at": "2024-01-01T00:00:00",
@@ -894,7 +900,7 @@ docker run -d -p 8000:8000 \
 
 当前版本针对 POC 场景进行了优化，已实现以下性能提升措施：
 
-数据库层面，所有高频查询字段都添加了索引。用户表按 union_id 建唯一索引，订单表按 user_id 和 created_at 建复合索引，确保列表查询的响应速度。分页查询使用游标分页方式，避免大偏移量导致的性能问题。
+数据库层面，所有高频查询字段都添加了索引。用户表按 openid 建唯一索引，订单表按 user_id 和 created_at 建复合索引，确保列表查询的响应速度。分页查询使用游标分页方式，避免大偏移量导致的性能问题。
 
 连接层面，SQLite 数据库配置了 WAL 模式，支持读写并发。同时限制了连接池大小，避免资源耗尽。对于需要复杂查询的场景，建议后续迁移到 PostgreSQL。
 

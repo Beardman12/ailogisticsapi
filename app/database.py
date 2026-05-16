@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import settings
@@ -25,7 +25,24 @@ def ensure_initialized() -> None:
     if _db_initialized:
         return
     Base.metadata.create_all(bind=engine)
+    _migrate_user_openid_column()
     _db_initialized = True
+
+
+def _migrate_user_openid_column() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    if "openid" in columns or "union_id" not in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE users RENAME COLUMN union_id TO openid"))
 
 
 def get_db() -> Generator[Session, None, None]:

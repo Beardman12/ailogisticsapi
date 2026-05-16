@@ -11,7 +11,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    union_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    openid: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
