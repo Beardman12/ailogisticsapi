@@ -137,11 +137,6 @@ def _build_submit_payload(order: Order) -> dict:
         "IDNumber": order.recipient.id_number,
     }
 
-    sender = {
-        "Contact": order.sender.sender_name,
-        "Phone": f"{order.sender.sender_phone_code}{order.sender.sender_phone}",
-    }
-
     skus = []
     for item in order.items:
         skus.append(
@@ -172,7 +167,6 @@ def _build_submit_payload(order: Order) -> dict:
         "Custom": order.user_remark,
         "Remark": order.user_remark,
         "ShipToAddress": {k: v for k, v in ship_to_address.items() if v not in (None, "")},
-        "Sender": {k: v for k, v in sender.items() if v not in (None, "")},
         "Skus": skus,
     }
 
@@ -182,7 +176,10 @@ def _build_submit_payload(order: Order) -> dict:
         "Remark": order.user_remark,
         "SubmitLater": order.submit_later,
     }
-    return {k: v for k, v in payload.items() if v is not None}
+    cleaned_payload = {k: v for k, v in payload.items() if v is not None}
+    if cleaned_payload.get("SubmitLater") is False:
+        cleaned_payload.pop("SubmitLater", None)
+    return cleaned_payload
 
 
 def _apply_status_snapshot(order: Order, status_payload: dict) -> None:
