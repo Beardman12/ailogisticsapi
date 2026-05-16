@@ -1,4 +1,3 @@
-
 # 小程序后端 API 服务
 
 本项目是一个基于 FastAPI 框架构建的小程序后端 API 服务，专为快速 POC（概念验证）而设计。提供用户认证、订单管理、AI 客服对话等核心功能。
@@ -90,6 +89,26 @@ pip install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
+### SQLite 说明（POC）
+
+POC版本统一使用SQLite。
+
+- 运行API时：Python内置sqlite3模块，通常不需要额外安装数据库驱动。
+- 本地排查数据时：建议安装sqlite3命令行工具。
+
+Windows（可选安装sqlite3命令行）：
+
+```bash
+winget install SQLite.SQLite
+sqlite3 --version
+```
+
+Linux/macOS（通常已自带，或按系统包管理器安装）：
+
+```bash
+sqlite3 --version
+```
+
 ### 安装步骤
 
 克隆项目代码后，进入项目目录并安装依赖：
@@ -126,6 +145,20 @@ LOG_LEVEL=INFO
 ```
 
 如果不创建 .env 文件，程序会使用代码中的默认值。开发环境下可以直接使用默认配置，生产环境必须修改 SECRET_KEY。
+
+首次运行前，建议先确保数据库目录存在：
+
+Windows PowerShell：
+
+```powershell
+New-Item -ItemType Directory -Force data
+```
+
+Linux/macOS：
+
+```bash
+mkdir -p data
+```
 
 ### 启动服务
 
