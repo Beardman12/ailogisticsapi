@@ -316,11 +316,21 @@ curl -X PUT "$BASE_URL/api/orders/1/complete" \
 curl -X PUT "$BASE_URL/api/orders/1/cancel" \
     -H "Authorization: Bearer $TOKEN"
 
-# 10) 创建聊天会话
+# 10) 运费预估（随机返回，用于POC）
+curl -X POST "$BASE_URL/api/orders/estimate" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "destination": "US",
+        "item_type": "bag",
+        "weight_kg": 1.2
+    }'
+
+# 11) 创建聊天会话
 curl -X POST "$BASE_URL/api/chat/history" \
     -H "Authorization: Bearer $TOKEN"
 
-# 11) 发送聊天消息（将 1 替换为真实 conversation_id）
+# 12) 发送聊天消息（将 1 替换为真实 conversation_id）
 curl -X POST "$BASE_URL/api/chat/message" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
@@ -329,7 +339,7 @@ curl -X POST "$BASE_URL/api/chat/message" \
         "conversation_id": 1
     }'
 
-# 12) 查询聊天历史（将 1 替换为真实 conversation_id）
+# 13) 查询聊天历史（将 1 替换为真实 conversation_id）
 curl -X GET "$BASE_URL/api/chat/history/1" \
     -H "Authorization: Bearer $TOKEN"
 ```
@@ -603,6 +613,37 @@ Authorization: Bearer <token>
         "total": 1,
         "skip": 0,
         "limit": 20
+    }
+}
+```
+
+**运费预估接口**用于按目的地、物品类型和重量返回预估价格信息。当前版本为 POC 随机估价逻辑，已预留后续替换为数据库计价规则。
+
+```
+POST /api/orders/estimate
+Authorization: Bearer <token>
+Content-Type: application/json
+
+请求体：
+{
+    "destination": "US",
+    "item_type": "bag",
+    "weight_kg": 1.2
+}
+
+响应示例：
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "destination": "US",
+        "item_type": "bag",
+        "weight_kg": "1.2",
+        "estimated_price": "52.40",
+        "first_weight_price": "26.20",
+        "additional_weight_price": "13.10",
+        "estimated_delivery_time": "5-7个工作日",
+        "currency": "CNY"
     }
 }
 ```
