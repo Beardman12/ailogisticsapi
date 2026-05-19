@@ -3,7 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.database import User
-from app.models.schemas import ApiResponse, OrderCreateRequest, OrderListData, OrderListItem, OrderOut
+from app.models.schemas import (
+    ApiResponse,
+    OrderCreateRequest,
+    OrderListData,
+    OrderListItem,
+    OrderOut,
+    ShippingEstimateRequest,
+)
 from app.services import order_service
 from app.utils.helpers import ok
 from app.utils.security import get_current_user
@@ -37,6 +44,16 @@ def list_orders(
         skip=skip,
         limit=limit,
     )
+    return ok(data=data)
+
+
+@router.post("/estimate", response_model=ApiResponse)
+def estimate_shipping(
+    payload: ShippingEstimateRequest,
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse:
+    _ = current_user
+    data = order_service.estimate_shipping(payload)
     return ok(data=data)
 
 

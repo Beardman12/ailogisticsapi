@@ -225,6 +225,23 @@ class OrderListData(BaseModel):
     limit: int
 
 
+class ShippingEstimateRequest(BaseModel):
+    destination: str = Field(min_length=1, max_length=100)
+    item_type: str = Field(min_length=1, max_length=100)
+    weight_kg: Decimal = Field(gt=0)
+
+
+class ShippingEstimateData(BaseModel):
+    destination: str
+    item_type: str
+    weight_kg: Decimal
+    estimated_price: Decimal
+    first_weight_price: Decimal
+    additional_weight_price: Decimal
+    estimated_delivery_time: str
+    currency: str = "CNY"
+
+
 class ChatCreateConversationData(BaseModel):
     conversation_id: int
 

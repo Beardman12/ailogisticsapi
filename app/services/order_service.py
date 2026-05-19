@@ -1,13 +1,49 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
+import random
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.database import Order, OrderItem, OrderParcel, OrderRecipient, OrderSender, User
-from app.models.schemas import OrderCreateRequest
+from app.models.schemas import OrderCreateRequest, ShippingEstimateData, ShippingEstimateRequest
 from app.services import chukou_service
 from app.utils.helpers import generate_order_no
+
+
+def estimate_shipping(payload: ShippingEstimateRequest) -> ShippingEstimateData:
+    # NOTE: 当前为随机估价逻辑，后续可替换为基于数据库的真实计价规则。
+    first_weight_price = Decimal(str(random.uniform(18, 40))).quantize(Decimal("0.01"))
+    additional_weight_price = Decimal(str(random.uniform(6, 16))).quantize(Decimal("0.01"))
+
+    first_weight_kg = Decimal("0.50")
+    additional_step_kg = Decimal("0.50")
+
+    if payload.weight_kg <= first_weight_kg:
+        additional_steps = 0
+    else:
+        additional_weight = payload.weight_kg - first_weight_kg
+        additional_steps_decimal = (additional_weight / additional_step_kg).to_integral_value(
+            rounding=ROUND_CEILING
+        )
+        additional_steps = int(additional_steps_decimal)
+
+    estimated_price = (first_weight_price + additional_weight_price * additional_steps).quantize(
+        Decimal("0.01")
+    )
+
+    estimated_delivery_time = random.choice(["3-5个工作日", "5-7个工作日", "7-10个工作日"])
+
+    return ShippingEstimateData(
+        destination=payload.destination,
+        item_type=payload.item_type,
+        weight_kg=payload.weight_kg,
+        estimated_price=estimated_price,
+        first_weight_price=first_weight_price,
+        additional_weight_price=additional_weight_price,
+        estimated_delivery_time=estimated_delivery_time,
+        currency="CNY",
+    )
 
 
 def create_order(db: Session, user: User, payload: OrderCreateRequest) -> Order:
