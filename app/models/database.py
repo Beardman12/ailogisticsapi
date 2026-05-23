@@ -60,7 +60,7 @@ class UserRecipientProfile(Base):
     district: Mapped[str | None] = mapped_column(String(100), nullable=True)
     street1: Mapped[str] = mapped_column(String(255))
     street2: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    postcode: Mapped[str] = mapped_column(String(20))
+    postcode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     email: Mapped[str | None] = mapped_column(String(100), nullable=True)
     id_type: Mapped[str] = mapped_column(String(32))
     id_number: Mapped[str] = mapped_column(String(64))

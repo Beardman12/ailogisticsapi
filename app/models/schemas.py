@@ -303,7 +303,7 @@ class MessageOut(BaseModel):
 
 
 class SenderProfileCreate(BaseModel):
-    profile_name: str = Field(min_length=1, max_length=100)
+    profile_name: str | None = Field(default=None, max_length=100)
     sender_name: str
     sender_phone_code: str
     sender_phone: str
@@ -314,7 +314,7 @@ class SenderProfileCreate(BaseModel):
 
 
 class SenderProfileUpdate(BaseModel):
-    profile_name: str = Field(min_length=1, max_length=100)
+    profile_name: str | None = Field(default=None, max_length=100)
     sender_name: str
     sender_phone_code: str
     sender_phone: str
@@ -341,7 +341,7 @@ class SenderProfileOut(BaseModel):
 
 
 class RecipientProfileCreate(BaseModel):
-    profile_name: str = Field(min_length=1, max_length=100)
+    profile_name: str | None = Field(default=None, max_length=100)
     recipient_name: str
     phone_code: str
     phone: str
@@ -352,7 +352,7 @@ class RecipientProfileCreate(BaseModel):
     district: str | None = None
     street1: str
     street2: str | None = None
-    postcode: str
+    postcode: str | None = None
     email: str | None = None
     id_type: str
     id_number: str
@@ -365,7 +365,7 @@ class RecipientProfileCreate(BaseModel):
 
 
 class RecipientProfileUpdate(BaseModel):
-    profile_name: str = Field(min_length=1, max_length=100)
+    profile_name: str | None = Field(default=None, max_length=100)
     recipient_name: str
     phone_code: str
     phone: str
@@ -376,7 +376,7 @@ class RecipientProfileUpdate(BaseModel):
     district: str | None = None
     street1: str
     street2: str | None = None
-    postcode: str
+    postcode: str | None = None
     email: str | None = None
     id_type: str
     id_number: str
@@ -403,7 +403,7 @@ class RecipientProfileOut(BaseModel):
     district: str | None
     street1: str
     street2: str | None
-    postcode: str
+    postcode: str | None
     email: str | None
     id_type: str
     id_number: str

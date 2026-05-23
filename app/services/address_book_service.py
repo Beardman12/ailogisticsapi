@@ -10,6 +10,21 @@ from app.models.schemas import (
 )
 
 
+def _resolve_profile_name(profile_name: str | None, fallback_name: str) -> str:
+    normalized = (profile_name or "").strip()
+    if normalized:
+        return normalized
+    fallback = fallback_name.strip()
+    if not fallback:
+        raise HTTPException(status_code=422, detail="profile_name or name field cannot be empty")
+    return fallback
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    return normalized or None
+
+
 def _clear_default_sender(db: Session, user_id: int) -> None:
     db.query(UserSenderProfile).filter(
         UserSenderProfile.user_id == user_id, UserSenderProfile.is_default.is_(True)
@@ -44,9 +59,11 @@ def create_sender_profile(db: Session, user: User, payload: SenderProfileCreate)
     if payload.is_default:
         _clear_default_sender(db, user.id)
 
+    resolved_profile_name = _resolve_profile_name(payload.profile_name, payload.sender_name)
+
     profile = UserSenderProfile(
         user_id=user.id,
-        profile_name=payload.profile_name,
+        profile_name=resolved_profile_name,
         sender_name=payload.sender_name,
         sender_phone_code=payload.sender_phone_code,
         sender_phone=payload.sender_phone,
@@ -65,9 +82,12 @@ def create_recipient_profile(db: Session, user: User, payload: RecipientProfileC
     if payload.is_default:
         _clear_default_recipient(db, user.id)
 
+    resolved_profile_name = _resolve_profile_name(payload.profile_name, payload.recipient_name)
+    normalized_postcode = _normalize_optional_text(payload.postcode)
+
     profile = UserRecipientProfile(
         user_id=user.id,
-        profile_name=payload.profile_name,
+        profile_name=resolved_profile_name,
         recipient_name=payload.recipient_name,
         phone_code=payload.phone_code,
         phone=payload.phone,
@@ -78,7 +98,7 @@ def create_recipient_profile(db: Session, user: User, payload: RecipientProfileC
         district=payload.district,
         street1=payload.street1,
         street2=payload.street2,
-        postcode=payload.postcode,
+        postcode=normalized_postcode,
         email=payload.email,
         id_type=payload.id_type,
         id_number=payload.id_number,
@@ -120,7 +140,7 @@ def update_sender_profile(
     if payload.is_default:
         _clear_default_sender(db, user.id)
 
-    profile.profile_name = payload.profile_name
+    profile.profile_name = _resolve_profile_name(payload.profile_name, payload.sender_name)
     profile.sender_name = payload.sender_name
     profile.sender_phone_code = payload.sender_phone_code
     profile.sender_phone = payload.sender_phone
@@ -142,7 +162,7 @@ def update_recipient_profile(
     if payload.is_default:
         _clear_default_recipient(db, user.id)
 
-    profile.profile_name = payload.profile_name
+    profile.profile_name = _resolve_profile_name(payload.profile_name, payload.recipient_name)
     profile.recipient_name = payload.recipient_name
     profile.phone_code = payload.phone_code
     profile.phone = payload.phone
@@ -153,7 +173,7 @@ def update_recipient_profile(
     profile.district = payload.district
     profile.street1 = payload.street1
     profile.street2 = payload.street2
-    profile.postcode = payload.postcode
+    profile.postcode = _normalize_optional_text(payload.postcode)
     profile.email = payload.email
     profile.id_type = payload.id_type
     profile.id_number = payload.id_number
