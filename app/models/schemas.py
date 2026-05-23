@@ -300,3 +300,118 @@ class MessageOut(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+
+
+class SenderProfileCreate(BaseModel):
+    profile_name: str = Field(min_length=1, max_length=100)
+    sender_name: str
+    sender_phone_code: str
+    sender_phone: str
+    pickup_point_id: int | None = None
+    pickup_point_name: str
+    domestic_tracking_no: str | None = None
+    is_default: bool = False
+
+
+class SenderProfileUpdate(BaseModel):
+    profile_name: str = Field(min_length=1, max_length=100)
+    sender_name: str
+    sender_phone_code: str
+    sender_phone: str
+    pickup_point_id: int | None = None
+    pickup_point_name: str
+    domestic_tracking_no: str | None = None
+    is_default: bool = False
+
+
+class SenderProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    profile_name: str
+    sender_name: str
+    sender_phone_code: str
+    sender_phone: str
+    pickup_point_id: int | None
+    pickup_point_name: str
+    domestic_tracking_no: str | None
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class RecipientProfileCreate(BaseModel):
+    profile_name: str = Field(min_length=1, max_length=100)
+    recipient_name: str
+    phone_code: str
+    phone: str
+    country_code: str = Field(min_length=2, max_length=2)
+    country_name: str
+    province: str
+    city: str
+    district: str | None = None
+    street1: str
+    street2: str | None = None
+    postcode: str
+    email: str | None = None
+    id_type: str
+    id_number: str
+    is_default: bool = False
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, value: str) -> str:
+        return value.upper()
+
+
+class RecipientProfileUpdate(BaseModel):
+    profile_name: str = Field(min_length=1, max_length=100)
+    recipient_name: str
+    phone_code: str
+    phone: str
+    country_code: str = Field(min_length=2, max_length=2)
+    country_name: str
+    province: str
+    city: str
+    district: str | None = None
+    street1: str
+    street2: str | None = None
+    postcode: str
+    email: str | None = None
+    id_type: str
+    id_number: str
+    is_default: bool = False
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, value: str) -> str:
+        return value.upper()
+
+
+class RecipientProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    profile_name: str
+    recipient_name: str
+    phone_code: str
+    phone: str
+    country_code: str
+    country_name: str
+    province: str
+    city: str
+    district: str | None
+    street1: str
+    street2: str | None
+    postcode: str
+    email: str | None
+    id_type: str
+    id_number: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class AddressDefaultsOut(BaseModel):
+    sender: SenderProfileOut | None
+    recipient: RecipientProfileOut | None

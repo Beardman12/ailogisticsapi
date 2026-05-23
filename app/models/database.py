@@ -17,6 +17,59 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    sender_profiles: Mapped[list["UserSenderProfile"]] = relationship(
+        "UserSenderProfile", back_populates="user", cascade="all, delete-orphan"
+    )
+    recipient_profiles: Mapped[list["UserRecipientProfile"]] = relationship(
+        "UserRecipientProfile", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class UserSenderProfile(Base):
+    __tablename__ = "user_sender_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    profile_name: Mapped[str] = mapped_column(String(100))
+    sender_name: Mapped[str] = mapped_column(String(100))
+    sender_phone_code: Mapped[str] = mapped_column(String(8))
+    sender_phone: Mapped[str] = mapped_column(String(32))
+    pickup_point_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pickup_point_name: Mapped[str] = mapped_column(String(100))
+    domestic_tracking_no: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship("User", back_populates="sender_profiles")
+
+
+class UserRecipientProfile(Base):
+    __tablename__ = "user_recipient_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    profile_name: Mapped[str] = mapped_column(String(100))
+    recipient_name: Mapped[str] = mapped_column(String(100))
+    phone_code: Mapped[str] = mapped_column(String(8))
+    phone: Mapped[str] = mapped_column(String(32))
+    country_code: Mapped[str] = mapped_column(String(2))
+    country_name: Mapped[str] = mapped_column(String(64))
+    province: Mapped[str] = mapped_column(String(100))
+    city: Mapped[str] = mapped_column(String(100))
+    district: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    street1: Mapped[str] = mapped_column(String(255))
+    street2: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    postcode: Mapped[str] = mapped_column(String(20))
+    email: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    id_type: Mapped[str] = mapped_column(String(32))
+    id_number: Mapped[str] = mapped_column(String(64))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship("User", back_populates="recipient_profiles")
+
 
 class Order(Base):
     __tablename__ = "orders"
