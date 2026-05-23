@@ -219,3 +219,6 @@ __marimo__/
 
 assets/
 *.db
+
+# App logs (including rotated files like app.log.1)
+logs/

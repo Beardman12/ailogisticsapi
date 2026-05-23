@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -11,13 +12,19 @@ LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 MAX_LOG_VALUE_LENGTH = 2000
 MAX_LOG_ITEMS = 50
 SENSITIVE_KEYS = {"authorization", "token", "access_token", "refresh_token", "cookie", "set-cookie"}
+_DATE_LOCK = threading.Lock()
+_CONFIGURED_LEVEL = logging.INFO
+_CONFIGURED_FORMATTER: logging.Formatter | None = None
 
 
 def configure_logging(level_name: str) -> None:
+    global _CONFIGURED_LEVEL, _CONFIGURED_FORMATTER
     log_level = getattr(logging, level_name.upper(), logging.INFO)
     logs_dir = _get_dated_logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)
     formatter = logging.Formatter(LOG_FORMAT)
+    _CONFIGURED_LEVEL = log_level
+    _CONFIGURED_FORMATTER = formatter
 
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
@@ -29,6 +36,13 @@ def configure_logging(level_name: str) -> None:
         root_logger.addHandler(console_handler)
 
     _ensure_file_handler(root_logger, logs_dir / "app.log", log_level, formatter)
+
+    # Keep noisy/sensitive third-party logs out of application logs.
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
     system_logger = logging.getLogger("mini_program_api.system")
     system_logger.setLevel(log_level)
@@ -63,6 +77,49 @@ def _ensure_file_handler(
     file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
+
+
+def _replace_file_handler(
+    logger: logging.Logger,
+    file_path: Path,
+    log_level: int,
+    formatter: logging.Formatter,
+) -> None:
+    resolved = str(file_path.resolve())
+    for handler in list(logger.handlers):
+        if isinstance(handler, RotatingFileHandler):
+            if handler.baseFilename == resolved:
+                handler.setLevel(log_level)
+                handler.setFormatter(formatter)
+                return
+            logger.removeHandler(handler)
+            handler.close()
+
+    file_handler = RotatingFileHandler(
+        file_path,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+
+def ensure_current_log_files() -> None:
+    formatter = _CONFIGURED_FORMATTER or logging.Formatter(LOG_FORMAT)
+    logs_dir = _get_dated_logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    expected_paths = {
+        "": logs_dir / "app.log",
+        "mini_program_api.system": logs_dir / "system_requests.log",
+        "mini_program_api.external": logs_dir / "external_api.log",
+    }
+
+    with _DATE_LOCK:
+        for logger_name, path in expected_paths.items():
+            logger = logging.getLogger(logger_name)
+            _replace_file_handler(logger, path, _CONFIGURED_LEVEL, formatter)
 
 
 def serialize_log_value(value: Any) -> Any:
@@ -108,6 +165,18 @@ def parse_request_body(body: bytes, content_type: str | None) -> Any:
     return _truncate_text(content)
 
 
+def parse_response_body(body: bytes | None, content_type: str | None) -> Any:
+    if not body:
+        return None
+    content = body.decode("utf-8", errors="replace")
+    if content_type and "application/json" in content_type.lower():
+        try:
+            return serialize_log_value(json.loads(content))
+        except json.JSONDecodeError:
+            return _truncate_text(content)
+    return _truncate_text(content)
+
+
 def build_system_request_log(
     *,
     request_id: str,
@@ -119,6 +188,8 @@ def build_system_request_log(
     request_body: Any,
     status_code: int,
     elapsed_ms: float,
+    response_body: Any = None,
+    error: str | None = None,
 ) -> dict[str, Any]:
     return {
         "request_id": request_id,
@@ -128,8 +199,10 @@ def build_system_request_log(
         "client_ip": client_ip,
         "headers": serialize_log_value(dict(headers)),
         "request_body": serialize_log_value(request_body),
+        "response_body": serialize_log_value(response_body),
         "status_code": status_code,
         "elapsed_ms": round(elapsed_ms, 2),
+        "error": error,
     }
 
 
@@ -145,6 +218,7 @@ def log_external_api_interaction(
     elapsed_ms: float | None = None,
     error: str | None = None,
 ) -> None:
+    ensure_current_log_files()
     logger = logging.getLogger("mini_program_api.external")
     payload = {
         "service": service_name,
@@ -161,6 +235,7 @@ def log_external_api_interaction(
 
 
 def log_system_request(payload: dict[str, Any]) -> None:
+    ensure_current_log_files()
     logger = logging.getLogger("mini_program_api.system")
     logger.info("system_request=%s", json.dumps(payload, ensure_ascii=False))
 

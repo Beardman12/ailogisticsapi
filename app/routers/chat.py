@@ -47,7 +47,7 @@ def send_message(
     prompt = chat_service.build_conversation_prompt(history_messages, payload.message)
 
     chat_service.add_message(db, conversation, role="user", content=payload.message)
-    assistant_reply, stream_events = chat_service.request_coze_reply(
+    assistant_reply, stream_events = chat_service.request_assistant_reply(
         conversation=conversation,
         prompt=prompt,
     )

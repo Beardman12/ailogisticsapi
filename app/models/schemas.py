@@ -226,9 +226,45 @@ class OrderListData(BaseModel):
 
 
 class ShippingEstimateRequest(BaseModel):
-    destination: str = Field(min_length=1, max_length=100)
-    item_type: str = Field(min_length=1, max_length=100)
-    weight_kg: Decimal = Field(gt=0)
+    destination: str | None = Field(default=None, min_length=1, max_length=100)
+    destination_province: str | None = Field(default=None, min_length=1, max_length=100)
+    destination_city: str | None = Field(default=None, min_length=1, max_length=100)
+    item_type: str | None = Field(default=None, min_length=1, max_length=100)
+    cargo_type: str | None = Field(default=None, min_length=1, max_length=100)
+    weight_kg: Decimal | None = Field(default=None, gt=0)
+    weight_kg_input: Decimal | None = Field(default=None, gt=0)
+    weight_g_input: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def normalize(self) -> "ShippingEstimateRequest":
+        if not self.destination:
+            province = (self.destination_province or "").strip()
+            city = (self.destination_city or "").strip()
+            merged = " ".join(part for part in [province, city] if part)
+            if merged:
+                self.destination = merged
+
+        if not self.item_type and self.cargo_type:
+            self.item_type = self.cargo_type
+
+        if self.weight_kg is None:
+            if self.weight_kg_input is not None:
+                self.weight_kg = self.weight_kg_input
+            elif self.weight_g_input is not None:
+                self.weight_kg = (Decimal(self.weight_g_input) / Decimal("1000")).quantize(Decimal("0.001"))
+
+        missing_fields: list[str] = []
+        if not self.destination:
+            missing_fields.append("destination or destination_province/destination_city")
+        if not self.item_type:
+            missing_fields.append("item_type or cargo_type")
+        if self.weight_kg is None:
+            missing_fields.append("weight_kg or weight_kg_input or weight_g_input")
+
+        if missing_fields:
+            raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+
+        return self
 
 
 class ShippingEstimateData(BaseModel):
