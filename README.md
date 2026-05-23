@@ -205,6 +205,20 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 命令执行后，服务会在 8000 端口启动。打开浏览器访问 http://localhost:8000/docs 可以查看自动生成的 API 文档。FastAPI 的交互式文档基于 OpenAPI 规范构建，支持在线调试所有接口。
 
+### CHUKOU 下单联调脚本
+
+项目内置了一个联调脚本，可用于创建测试用户、读取订单表中的订单并调用 CHUKOU API 下单，便于快速验证链路是否打通。
+
+```bash
+# 自动创建/复用测试用户，并提交最新一条可提交订单
+uv run python -m app.scripts.chukou_submit_test
+
+# 指定订单 ID 提交
+uv run python -m app.scripts.chukou_submit_test --order-id 4
+```
+
+脚本输出为 JSON，包含 test_user、before、after 以及 error（失败时）字段。
+
 ## API 接口文档
 
 服务启动后，可以通过访问以下地址查看完整的 API 文档：

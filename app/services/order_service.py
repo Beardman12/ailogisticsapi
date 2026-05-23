@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
 import random
+from collections.abc import Callable
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -247,12 +248,39 @@ def _apply_status_snapshot(order: Order, status_payload: dict) -> None:
     order.order_status = "creating"
 
 
-def complete_order(db: Session, order: Order) -> None:
+def complete_order(
+    db: Session,
+    order: Order,
+    *,
+    debug_collector: Callable[[dict], None] | None = None,
+) -> None:
     if order.order_status in {"cancelled", "success"}:
         raise HTTPException(status_code=400, detail="Order cannot be completed")
 
     payload = _build_submit_payload(order)
-    status_code, response_data = chukou_service.create_direct_express_order(payload)
+    if debug_collector:
+        debug_collector({"stage": "submit_request", "payload": payload})
+
+    try:
+        status_code, response_data = chukou_service.create_direct_express_order(payload)
+        if debug_collector:
+            debug_collector(
+                {
+                    "stage": "submit_response",
+                    "status_code": status_code,
+                    "response_data": response_data,
+                }
+            )
+    except HTTPException as exc:
+        if debug_collector:
+            debug_collector(
+                {
+                    "stage": "submit_error",
+                    "status_code": exc.status_code,
+                    "detail": str(exc.detail),
+                }
+            )
+        raise
 
     order.submitted_at = datetime.now()
     order.order_status = "submitted"
@@ -262,6 +290,14 @@ def complete_order(db: Session, order: Order) -> None:
 
     # 200 means duplicate submit, 201 means accepted; both are non-error according to upstream API.
     if status_code not in {200, 201}:
+        if debug_collector:
+            debug_collector(
+                {
+                    "stage": "submit_unexpected_status",
+                    "status_code": status_code,
+                    "response_data": response_data,
+                }
+            )
         raise HTTPException(status_code=502, detail="Unexpected status from Chukou create order API")
 
     if isinstance(response_data, dict):
@@ -273,17 +309,35 @@ def complete_order(db: Session, order: Order) -> None:
                 order.submit_failed_message = first.get("Message")
                 order.order_status = "failed"
                 db.commit()
+                if debug_collector:
+                    debug_collector(
+                        {
+                            "stage": "submit_business_error",
+                            "error_code": order.submit_failed_code,
+                            "error_message": order.submit_failed_message,
+                        }
+                    )
                 raise HTTPException(status_code=400, detail=order.submit_failed_message or "Submit failed")
 
     # Try a single status query right after submit. If upstream has not finished async processing,
     # keep local order in creating state and let later polling endpoint/scheduler continue.
     try:
         _, status_payload = chukou_service.get_direct_express_order_status(order.package_id)
+        if debug_collector:
+            debug_collector({"stage": "status_response", "response_data": status_payload})
         if isinstance(status_payload, dict):
             _apply_status_snapshot(order, status_payload)
         else:
             order.order_status = "creating"
-    except HTTPException:
+    except HTTPException as exc:
+        if debug_collector:
+            debug_collector(
+                {
+                    "stage": "status_error",
+                    "status_code": exc.status_code,
+                    "detail": str(exc.detail),
+                }
+            )
         order.order_status = "creating"
 
     db.commit()
