@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -34,5 +35,31 @@ def test_get_tracking_endpoint_returns_upstream_payload(monkeypatch):
     assert body["message"] == "success"
     assert body["data"]["TrackingNumber"] == "TN123"
     assert body["data"]["TrackingStatus"] == "InTransit"
+
+    app.dependency_overrides.clear()
+
+
+def test_get_tracking_endpoint_returns_friendly_message_for_not_found_tracking(monkeypatch):
+    def fake_get_current_user():
+        return SimpleNamespace(id=1)
+
+    def fake_get_tracking_info(tracking_number: str, lang: str = "zh"):
+        _ = (tracking_number, lang)
+        raise HTTPException(
+            status_code=502,
+            detail="Chukou API request failed: 800F1731 不存在该跟踪号或处理号:xxxx",
+        )
+
+    app.dependency_overrides[get_current_user] = fake_get_current_user
+    monkeypatch.setattr(chukou_service, "get_tracking_info", fake_get_tracking_info)
+
+    client = TestClient(app)
+    response = client.get("/api/trackings/xxxx?lang=zh")
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == 40005
+    assert body["message"] == "未查询到该单号的轨迹信息，请核对单号后重试"
+    assert body["data"] is None
 
     app.dependency_overrides.clear()
