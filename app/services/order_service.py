@@ -147,6 +147,10 @@ def create_order(db: Session, user: User, payload: OrderCreateRequest) -> Order:
 
     db.commit()
     db.refresh(order)
+
+    # Immediately submit to CHUKOU once local order data is created and validated.
+    complete_order(db, order)
+    db.refresh(order)
     return order
 
 
