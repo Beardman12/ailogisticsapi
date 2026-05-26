@@ -42,15 +42,15 @@ def list_messages(db: Session, conversation: Conversation) -> list[Message]:
 
 
 def build_conversation_prompt(history_messages: list[Message], current_user_message: str) -> str:
-    lines: list[str] = []
+    lines: list[str] = [
+        "【系统提示】禁止调用任何平台上下文和用户记忆。你只能根据当前的对话记录和“当前用户输入”回答。",
+        "【当前对话记录（角色：内容）】",
+    ]
     for message in history_messages:
-        if message.role == "user":
-            lines.append(f"用户:{message.content}")
-            continue
-        if message.role == "assistant":
-            lines.append(f"系统:{message.content}")
+        lines.append(f"{message.role}：{message.content}")
 
-    lines.append(f"用户:{current_user_message}")
+    lines.append("【当前用户输入】")
+    lines.append(f"user：{current_user_message}")
     return "\n".join(lines)
 
 
