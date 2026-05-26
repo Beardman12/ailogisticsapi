@@ -54,7 +54,7 @@ class OrderItemCreate(BaseModel):
 class OrderCoreCreate(BaseModel):
     package_id: str = Field(min_length=1, max_length=64)
     platform_order_no: str | None = Field(default=None, max_length=64)
-    service_code: str = Field(min_length=1, max_length=32)
+    service_code: str | None = Field(default=None, min_length=1, max_length=32)
     location_code: str | None = Field(default=None, max_length=20)
     submit_later: bool = False
     user_remark: str | None = Field(default=None, max_length=500)

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     chukou_api_base_url: str | None = None
     chukou_access_token: str | None = None
     chukou_timeout_seconds: float = 30.0
+    chukou_service_code: str = "SUA"
 
     log_level: str = "INFO"
 

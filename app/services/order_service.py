@@ -6,10 +6,25 @@ from collections.abc import Callable
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.database import Order, OrderItem, OrderParcel, OrderRecipient, OrderSender, User
 from app.models.schemas import OrderCreateRequest, ShippingEstimateData, ShippingEstimateRequest
 from app.services import chukou_service
 from app.utils.helpers import generate_order_no
+
+
+def _ensure_text_min_length(field_name: str, value: str | None, min_length: int = 2) -> None:
+    normalized = (value or "").strip()
+    if len(normalized) < min_length:
+        raise HTTPException(status_code=400, detail=f"{field_name} 长度不能小于 {min_length} 个字符")
+
+
+def _ensure_not_numeric_min_length(field_name: str, value: str | None, min_length: int = 2) -> None:
+    normalized = (value or "").strip()
+    if len(normalized) < min_length:
+        raise HTTPException(status_code=400, detail=f"{field_name} 长度不能小于 {min_length} 个字符")
+    if normalized.isdigit():
+        raise HTTPException(status_code=400, detail=f"{field_name} 不能为纯数字")
 
 
 def estimate_shipping(payload: ShippingEstimateRequest) -> ShippingEstimateData:
@@ -52,12 +67,14 @@ def create_order(db: Session, user: User, payload: OrderCreateRequest) -> Order:
     if existing_order:
         raise HTTPException(status_code=400, detail="package_id already exists")
 
+    _ensure_not_numeric_min_length("recipient.street1", payload.recipient.street1)
+
     order = Order(
         order_no=generate_order_no(),
         user_id=user.id,
         package_id=payload.order.package_id,
         platform_order_no=payload.order.platform_order_no,
-        service_code=payload.order.service_code,
+        service_code=settings.chukou_service_code,
         location_code=payload.order.location_code,
         submit_later=payload.order.submit_later,
         order_status="submitted",
@@ -156,9 +173,15 @@ def _decimal_to_float(value: Decimal | None) -> float | None:
     return float(value)
 
 
+def _build_chukou_package_id(order_id: int) -> str:
+    return f"mini{order_id:010d}"
+
+
 def _build_submit_payload(order: Order) -> dict:
     if not order.sender or not order.recipient or not order.parcel or not order.items:
         raise HTTPException(status_code=400, detail="Order data is incomplete")
+
+    _ensure_not_numeric_min_length("recipient.street1", order.recipient.street1)
 
     ship_to_address = {
         "Country": order.recipient.country_code,
@@ -176,6 +199,9 @@ def _build_submit_payload(order: Order) -> dict:
 
     skus = []
     for item in order.items:
+        _ensure_text_min_length("DeclareNameEn", item.goods_desc_en)
+        _ensure_text_min_length("DeclareNameCn", item.goods_desc_cn)
+        _ensure_text_min_length("ProductName", item.goods_desc_en)
         skus.append(
             {
                 "Sku": item.sku_code or f"ITEM-{item.line_no}",
@@ -190,8 +216,10 @@ def _build_submit_payload(order: Order) -> dict:
             }
         )
 
+    chukou_package_id = _build_chukou_package_id(order.id)
+
     package = {
-        "PackageId": order.package_id,
+        "PackageId": chukou_package_id,
         "PlatformOrderNo": order.platform_order_no,
         "ServiceCode": order.service_code,
         "Weight": order.parcel.weight_g_input,
@@ -322,7 +350,8 @@ def complete_order(
     # Try a single status query right after submit. If upstream has not finished async processing,
     # keep local order in creating state and let later polling endpoint/scheduler continue.
     try:
-        _, status_payload = chukou_service.get_direct_express_order_status(order.package_id)
+        status_package_id = _build_chukou_package_id(order.id)
+        _, status_payload = chukou_service.get_direct_express_order_status(status_package_id)
         if debug_collector:
             debug_collector({"stage": "status_response", "response_data": status_payload})
         if isinstance(status_payload, dict):

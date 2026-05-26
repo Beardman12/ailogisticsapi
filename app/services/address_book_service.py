@@ -10,6 +10,14 @@ from app.models.schemas import (
 )
 
 
+def _ensure_not_numeric_min_length(field_name: str, value: str | None, min_length: int = 2) -> None:
+    normalized = (value or "").strip()
+    if len(normalized) < min_length:
+        raise HTTPException(status_code=400, detail=f"{field_name} 长度不能小于 {min_length} 个字符")
+    if normalized.isdigit():
+        raise HTTPException(status_code=400, detail=f"{field_name} 不能为纯数字")
+
+
 def _resolve_profile_name(profile_name: str | None, fallback_name: str) -> str:
     normalized = (profile_name or "").strip()
     if normalized:
@@ -81,6 +89,8 @@ def create_sender_profile(db: Session, user: User, payload: SenderProfileCreate)
 def create_recipient_profile(db: Session, user: User, payload: RecipientProfileCreate) -> UserRecipientProfile:
     if payload.is_default:
         _clear_default_recipient(db, user.id)
+
+    _ensure_not_numeric_min_length("recipient.street1", payload.street1)
 
     resolved_profile_name = _resolve_profile_name(payload.profile_name, payload.recipient_name)
     normalized_postcode = _normalize_optional_text(payload.postcode)
@@ -161,6 +171,8 @@ def update_recipient_profile(
 
     if payload.is_default:
         _clear_default_recipient(db, user.id)
+
+    _ensure_not_numeric_min_length("recipient.street1", payload.street1)
 
     profile.profile_name = _resolve_profile_name(payload.profile_name, payload.recipient_name)
     profile.recipient_name = payload.recipient_name
