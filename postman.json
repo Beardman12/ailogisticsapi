@@ -20,6 +20,10 @@
     {
       "key": "packageId",
       "value": ""
+    },
+    {
+      "key": "trackingNumber",
+      "value": ""
     }
   ],
   "item": [
@@ -121,6 +125,9 @@
               "if (res && res.data && res.data.id) {",
               "    pm.collectionVariables.set('orderId', String(res.data.id));",
               "}",
+              "if (res && res.data && res.data.tracking_number) {",
+              "    pm.collectionVariables.set('trackingNumber', String(res.data.tracking_number));",
+              "}",
               "",
               "pm.test('orderId saved', function () {",
               "    pm.expect(pm.collectionVariables.get('orderId')).to.not.eql('');",
@@ -165,6 +172,64 @@
               "",
               "const res = pm.response.json();",
               "console.log('Complete order response:', res);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Get Tracking",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/trackings/{{trackingNumber}}?lang=zh",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "trackings",
+            "{{trackingNumber}}"
+          ],
+          "query": [
+            {
+              "key": "lang",
+              "value": "zh"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.collectionVariables.get('trackingNumber')) {",
+              "    pm.collectionVariables.set('trackingNumber', 'CZN190507LINJ000023');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Get tracking status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "pm.test('Tracking data exists', function () {",
+              "    pm.expect(res).to.have.property('data');",
+              "});"
             ]
           }
         }

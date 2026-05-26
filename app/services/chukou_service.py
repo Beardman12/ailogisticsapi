@@ -1,5 +1,6 @@
 from typing import Any
 from time import perf_counter
+from urllib.parse import quote
 
 import httpx
 from fastapi import HTTPException
@@ -88,3 +89,16 @@ def create_direct_express_order(payload: dict[str, Any]) -> tuple[int, Any]:
 
 def get_direct_express_order_status(package_id: str) -> tuple[int, Any]:
     return _request("GET", f"/v1/directExpressOrders/{package_id}/status")
+
+
+def get_tracking_info(tracking_number: str, lang: str = "zh") -> tuple[int, Any]:
+    normalized_tracking_number = tracking_number.strip()
+    if not normalized_tracking_number:
+        raise HTTPException(status_code=400, detail="tracking_number is required")
+
+    normalized_lang = lang.strip().lower()
+    if normalized_lang not in {"zh", "en"}:
+        raise HTTPException(status_code=400, detail="lang must be one of: zh, en")
+
+    encoded_tracking_number = quote(normalized_tracking_number, safe="")
+    return _request("GET", f"/v1/trackings/{encoded_tracking_number}?lang={normalized_lang}")

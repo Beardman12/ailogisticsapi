@@ -318,6 +318,12 @@ curl -X POST "$BASE_URL/api/orders" \
 curl -X GET "$BASE_URL/api/orders?order_status=submitted&skip=0&limit=20" \
     -H "Authorization: Bearer $TOKEN"
 
+# 7) 查询包裹轨迹（tracking_number 支持处理号或跟踪号）
+# 如果创建订单后 data.tracking_number 已返回，可直接替换下方 TRACKING_NUMBER。
+TRACKING_NUMBER="CZN190507LINJ000023"
+curl -X GET "$BASE_URL/api/trackings/$TRACKING_NUMBER?lang=zh" \
+    -H "Authorization: Bearer $TOKEN"
+
 # 7) 查询订单详情（将 1 替换为真实 order_id）
 curl -X GET "$BASE_URL/api/orders/1" \
     -H "Authorization: Bearer $TOKEN"

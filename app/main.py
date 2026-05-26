@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import address_book, auth, chat, orders
+from app.routers import address_book, auth, chat, orders, tracking
 from app.utils.logging import (
     build_system_request_log,
     configure_logging,
@@ -36,6 +36,7 @@ app.include_router(auth.router)
 app.include_router(orders.router)
 app.include_router(chat.router)
 app.include_router(address_book.router)
+app.include_router(tracking.router)
 
 logger = logging.getLogger("mini_program_api")
 configure_logging(settings.log_level)
