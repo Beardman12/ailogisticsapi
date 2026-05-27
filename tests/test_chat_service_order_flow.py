@@ -319,6 +319,14 @@ def test_handle_chat_message_tracking_without_number_returns_prompt(monkeypatch)
     assert result.requires_confirmation is False
 
 
+def test_is_tracking_intent_supports_keywords_and_alnum_pattern():
+    assert chat_service._is_tracking_intent("包裹查询") is True
+    assert chat_service._is_tracking_intent("帮我查轨迹") is True
+    assert chat_service._is_tracking_intent("A123456789") is True
+    assert chat_service._is_tracking_intent("单号是 CZN190507LINJ000023") is True
+    assert chat_service._is_tracking_intent("你们支持哪些渠道") is False
+
+
 def test_confirm_message_requires_exact_phrase():
     assert chat_service._is_confirm_message("确认下单") is True
     assert chat_service._is_confirm_message("ok") is False

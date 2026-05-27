@@ -525,16 +525,33 @@ def _is_order_intent(user_message: str) -> bool:
 def _is_tracking_intent(user_message: str) -> bool:
     normalized = (user_message or "").lower()
     keywords = [
+        "包裹查询",
         "轨迹",
         "跟踪",
         "跟踪号",
         "查件",
         "查询物流",
         "物流信息",
+        "查包裹",
+        "包裹状态",
         "tracking",
         "track",
     ]
-    return any(keyword in normalized for keyword in keywords)
+    if any(keyword in normalized for keyword in keywords):
+        return True
+    return _contains_tracking_number_pattern(user_message)
+
+
+def _contains_tracking_number_pattern(text: str) -> bool:
+    if not text:
+        return False
+
+    # 常见单号特征：字母+数字混合，或以单个字母开头后接数字。
+    if re.search(r"\b[A-Za-z]\d{5,}\b", text):
+        return True
+    if re.search(r"\b(?=[A-Za-z0-9-]{6,40}\b)(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9-]+\b", text):
+        return True
+    return False
 
 
 def _extract_tracking_number_from_text(text: str) -> str | None:
