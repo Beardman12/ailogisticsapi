@@ -223,6 +223,102 @@ def test_handle_chat_message_order_payload_missing_item_value_fields_is_human_re
     assert "第1个商品总价(USD)（必填）" in result.message
 
 
+def test_handle_chat_message_tracking_query_calls_server_and_returns_ai_final_reply(monkeypatch):
+    monkeypatch.setattr(chat_service, "add_message", lambda db, conversation, role, content: None)
+    monkeypatch.setattr(chat_service, "_handle_pending_confirmation", lambda db, user, c, m: None)
+    monkeypatch.setattr(chat_service, "list_messages", lambda db, conversation: [])
+    monkeypatch.setattr(chat_service.address_book_service, "get_default_sender_profile", lambda db, user: _default_sender())
+    monkeypatch.setattr(
+        chat_service.address_book_service,
+        "get_default_recipient_profile",
+        lambda db, user: _default_recipient(),
+    )
+
+    call_state = {"count": 0}
+
+    def fake_assistant_reply(conversation, prompt):
+        call_state["count"] += 1
+        if "轨迹查询意图识别助手" in prompt:
+            return (
+                '{"action":"query_tracking","assistant_message":"我来帮你查一下轨迹。","tracking_number":"TN123456"}',
+                [],
+            )
+        if "轨迹原始数据" in prompt:
+            assert "字段说明" in prompt
+            assert "Checkpoints时间线（服务端整理）" in prompt
+            assert "Checkpoints" in prompt
+            return ("跟踪号 TN123456 当前状态：运输中。最新节点：包裹已离开处理中心。", [])
+        raise AssertionError("unexpected prompt")
+
+    monkeypatch.setattr(chat_service, "request_assistant_reply", fake_assistant_reply)
+
+    captured = {}
+
+    def fake_get_tracking_info(tracking_number: str, lang: str = "zh"):
+        captured["tracking_number"] = tracking_number
+        captured["lang"] = lang
+        return 200, {
+            "TrackingNumber": tracking_number,
+            "TrackingStatus": "InTransit",
+            "Checkpoints": [{"Message": "包裹已离开处理中心"}],
+        }
+
+    monkeypatch.setattr(chat_service.chukou_service, "get_tracking_info", fake_get_tracking_info)
+
+    result = chat_service.handle_chat_message(
+        db=object(),
+        user=SimpleNamespace(id=1),
+        conversation=SimpleNamespace(id=99),
+        user_message="请帮我查一下 TN123456 的轨迹",
+    )
+
+    assert call_state["count"] == 2
+    assert captured["tracking_number"] == "TN123456"
+    assert captured["lang"] == "zh"
+    assert "当前状态" in result.message
+    assert result.requires_confirmation is False
+
+
+def test_handle_chat_message_tracking_without_number_returns_prompt(monkeypatch):
+    monkeypatch.setattr(chat_service, "add_message", lambda db, conversation, role, content: None)
+    monkeypatch.setattr(chat_service, "_handle_pending_confirmation", lambda db, user, c, m: None)
+    monkeypatch.setattr(chat_service, "list_messages", lambda db, conversation: [])
+    monkeypatch.setattr(chat_service.address_book_service, "get_default_sender_profile", lambda db, user: _default_sender())
+    monkeypatch.setattr(
+        chat_service.address_book_service,
+        "get_default_recipient_profile",
+        lambda db, user: _default_recipient(),
+    )
+    monkeypatch.setattr(
+        chat_service,
+        "request_assistant_reply",
+        lambda conversation, prompt: (
+            '{"action":"reply","assistant_message":"请提供跟踪号，我再为你查询。","tracking_number":null}',
+            [],
+        ),
+    )
+
+    called = {"tracking_called": False}
+
+    def fake_get_tracking_info(tracking_number: str, lang: str = "zh"):
+        called["tracking_called"] = True
+        _ = (tracking_number, lang)
+        return 200, {}
+
+    monkeypatch.setattr(chat_service.chukou_service, "get_tracking_info", fake_get_tracking_info)
+
+    result = chat_service.handle_chat_message(
+        db=object(),
+        user=SimpleNamespace(id=1),
+        conversation=SimpleNamespace(id=99),
+        user_message="帮我查下这个包裹现在到哪了",
+    )
+
+    assert called["tracking_called"] is False
+    assert "请提供跟踪号" in result.message
+    assert result.requires_confirmation is False
+
+
 def test_confirm_message_requires_exact_phrase():
     assert chat_service._is_confirm_message("确认下单") is True
     assert chat_service._is_confirm_message("ok") is False

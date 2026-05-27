@@ -1,5 +1,6 @@
 import json
 import re
+from typing import Any
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.database import Conversation, Message, PendingOrderConfirmation, User
 from app.models.schemas import AiOrderCreateRequest, ChatMessageData
-from app.services import address_book_service, order_service
+from app.services import address_book_service, chukou_service, order_service
 from app.services.chat_providers import get_chat_provider
 
 
@@ -100,6 +101,59 @@ def build_order_decision_prompt(
     return "\n".join(lines)
 
 
+def build_tracking_decision_prompt(
+    history_messages: list[Message],
+    current_user_message: str,
+) -> str:
+    lines: list[str] = [
+        "【系统提示】你是物流轨迹查询意图识别助手。你只负责判断是否需要服务端先查轨迹，不直接编造轨迹。",
+        "【输出格式】你必须返回严格 JSON，对象结构如下：",
+        '{"action":"reply|query_tracking","assistant_message":"给用户显示的回复","tracking_number":null|"跟踪号"}',
+        "【规则】",
+        "1) 仅当用户明确要查某个单号轨迹，且你能提取到跟踪号时，action=query_tracking。",
+        "2) 如果用户在问轨迹但未提供可用跟踪号，action=reply，assistant_message 要求用户补充跟踪号。",
+        "3) tracking_number 仅在 action=query_tracking 时填写；否则必须为 null。",
+        "4) 不要输出下单相关字段，不要输出 markdown。",
+        "【当前对话记录（角色：内容）】",
+    ]
+    for message in history_messages:
+        lines.append(f"{message.role}：{message.content}")
+
+    lines.append("【当前用户输入】")
+    lines.append(f"user：{current_user_message}")
+    return "\n".join(lines)
+
+
+def build_tracking_answer_prompt(
+    history_messages: list[Message],
+    current_user_message: str,
+    tracking_number: str,
+    tracking_data: Any,
+) -> str:
+    tracking_context = _build_tracking_prompt_context(tracking_number, tracking_data)
+    lines: list[str] = [
+        "【系统提示】你是物流轨迹客服助手。请基于已查询到的轨迹数据生成最终答复。",
+        "【回答要求】",
+        "1) 用自然中文回复，优先说明当前状态。",
+        "2) 必须输出“轨迹时间线”小节，内容仅来自 Checkpoints。",
+        "3) 如 Checkpoints 为空，明确写“暂未返回轨迹节点”。",
+        "4) 如轨迹数据字段缺失，明确说明“系统已查询到结果但信息不完整”。",
+        "5) 不要编造不存在的轨迹节点。",
+        f"【已查询跟踪号】{tracking_number}",
+        f"【字段说明】{json.dumps(tracking_context['field_descriptions'], ensure_ascii=False)}",
+        f"【服务端整理结果】{json.dumps(tracking_context['normalized_tracking'], ensure_ascii=False)}",
+        f"【Checkpoints时间线（服务端整理）】{json.dumps(tracking_context['timeline_checkpoints'], ensure_ascii=False)}",
+        f"【轨迹原始数据】{json.dumps(tracking_context['raw_tracking_data'], ensure_ascii=False)}",
+        "【当前对话记录（角色：内容）】",
+    ]
+    for message in history_messages:
+        lines.append(f"{message.role}：{message.content}")
+
+    lines.append("【当前用户输入】")
+    lines.append(f"user：{current_user_message}")
+    return "\n".join(lines)
+
+
 def request_assistant_reply(
     *,
     conversation: Conversation,
@@ -128,6 +182,50 @@ def handle_chat_message(db: Session, user: User, conversation: Conversation, use
     history_messages = list_messages(db, conversation)
     default_sender = address_book_service.get_default_sender_profile(db, user)
     default_recipient = address_book_service.get_default_recipient_profile(db, user)
+
+    if _is_tracking_intent(user_message):
+        tracking_prompt = build_tracking_decision_prompt(history_messages, user_message)
+        assistant_reply, stream_events = request_assistant_reply(
+            conversation=conversation,
+            prompt=tracking_prompt,
+        )
+
+        reply_text = assistant_reply
+        response_events = stream_events
+        tracking_decision = _parse_tracking_decision(assistant_reply)
+
+        if tracking_decision is not None:
+            reply_text = tracking_decision["assistant_message"]
+            if tracking_decision["action"] == "query_tracking":
+                tracking_number = tracking_decision["tracking_number"] or _extract_tracking_number_from_text(user_message)
+                if not tracking_number:
+                    reply_text = "我可以帮你查询物流轨迹，请提供完整跟踪号。"
+                else:
+                    try:
+                        _, tracking_data = chukou_service.get_tracking_info(tracking_number=tracking_number, lang="zh")
+                    except HTTPException as exc:
+                        reply_text = _build_tracking_error_message(exc)
+                    else:
+                        tracking_answer_prompt = build_tracking_answer_prompt(
+                            history_messages=history_messages,
+                            current_user_message=user_message,
+                            tracking_number=tracking_number,
+                            tracking_data=tracking_data,
+                        )
+                        reply_text, response_events = request_assistant_reply(
+                            conversation=conversation,
+                            prompt=tracking_answer_prompt,
+                        )
+
+        add_message(db, conversation, role="assistant", content=reply_text)
+        return ChatMessageData(
+            conversation_id=conversation.id,
+            message=reply_text,
+            stream_events=response_events,
+            requires_confirmation=False,
+            pending_order_payload=None,
+            confirmed_order_id=None,
+        )
 
     if not _is_order_intent(user_message):
         general_prompt = build_general_prompt(history_messages, user_message)
@@ -241,6 +339,45 @@ def _parse_ai_decision(raw_text: str) -> dict | None:
         "action": action,
         "assistant_message": assistant_message.strip(),
         "order_payload": payload.get("order_payload"),
+    }
+
+
+def _parse_tracking_decision(raw_text: str) -> dict | None:
+    payload = _extract_json_from_text(raw_text)
+    if not isinstance(payload, dict):
+        return None
+
+    action = payload.get("action")
+    if action not in {"reply", "query_tracking"}:
+        return None
+
+    assistant_message = payload.get("assistant_message")
+    if not isinstance(assistant_message, str) or not assistant_message.strip():
+        return None
+
+    tracking_number = payload.get("tracking_number")
+    if action == "query_tracking":
+        if tracking_number is None:
+            return {
+                "action": action,
+                "assistant_message": assistant_message.strip(),
+                "tracking_number": None,
+            }
+        if not isinstance(tracking_number, str):
+            return None
+        normalized_tracking_number = tracking_number.strip()
+        if not normalized_tracking_number:
+            return None
+        return {
+            "action": action,
+            "assistant_message": assistant_message.strip(),
+            "tracking_number": normalized_tracking_number,
+        }
+
+    return {
+        "action": action,
+        "assistant_message": assistant_message.strip(),
+        "tracking_number": None,
     }
 
 
@@ -383,6 +520,107 @@ def _is_order_intent(user_message: str) -> bool:
         "create order",
     ]
     return any(keyword in normalized for keyword in keywords)
+
+
+def _is_tracking_intent(user_message: str) -> bool:
+    normalized = (user_message or "").lower()
+    keywords = [
+        "轨迹",
+        "跟踪",
+        "跟踪号",
+        "查件",
+        "查询物流",
+        "物流信息",
+        "tracking",
+        "track",
+    ]
+    return any(keyword in normalized for keyword in keywords)
+
+
+def _extract_tracking_number_from_text(text: str) -> str | None:
+    if not text:
+        return None
+
+    # 支持常见跟踪号字符：字母、数字、短横线。
+    candidates = re.findall(r"[A-Za-z0-9-]{6,40}", text)
+    if not candidates:
+        return None
+
+    stop_words = {"tracking", "track", "order", "物流信息"}
+    for candidate in candidates:
+        if candidate.lower() in stop_words:
+            continue
+        if any(char.isdigit() for char in candidate):
+            return candidate
+    return None
+
+
+def _build_tracking_error_message(exc: HTTPException) -> str:
+    raw_detail = str(exc.detail)
+    if "800F1731" in raw_detail:
+        return "未查询到该单号的轨迹信息，请核对单号后重试。"
+    return "轨迹查询暂时失败，请稍后重试。"
+
+
+def _build_tracking_prompt_context(tracking_number: str, tracking_data: Any) -> dict[str, Any]:
+    raw = tracking_data if isinstance(tracking_data, dict) else {"raw": tracking_data}
+    normalized_tracking = {
+        "tracking_number": _pick_tracking_value(raw, ["TrackingNumber", "tracking_number", "trackingNo", "TrackingNo"]) or tracking_number,
+        "tracking_status": _pick_tracking_value(raw, ["TrackingStatus", "tracking_status", "status", "Status"]),
+        "service_provider": _pick_tracking_value(raw, ["Provider", "provider", "Carrier", "carrier"]),
+        "latest_update_time": _pick_tracking_value(raw, ["LastCheckpointTime", "last_checkpoint_time", "LastUpdateTime", "last_update_time"]),
+    }
+    timeline_checkpoints = _extract_timeline_checkpoints(raw)
+
+    field_descriptions = {
+        "TrackingNumber": "跟踪号",
+        "TrackingStatus": "轨迹当前状态",
+        "Checkpoints": "轨迹时间线节点数组（按时间顺序）",
+        "Checkpoints[].CheckpointTime": "节点时间（若接口提供）",
+        "Checkpoints[].Location": "节点发生地点（若接口提供）",
+        "Checkpoints[].Status": "节点状态（若接口提供）",
+        "Checkpoints[].Message": "节点描述",
+    }
+    return {
+        "field_descriptions": field_descriptions,
+        "normalized_tracking": normalized_tracking,
+        "timeline_checkpoints": timeline_checkpoints,
+        "raw_tracking_data": raw,
+    }
+
+
+def _pick_tracking_value(payload: dict[str, Any], keys: list[str]) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _extract_timeline_checkpoints(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = payload.get("Checkpoints")
+    if not isinstance(candidates, list):
+        return []
+
+    timeline: list[dict[str, Any]] = []
+    for checkpoint in candidates:
+        if not isinstance(checkpoint, dict):
+            continue
+        message = _pick_tracking_value(checkpoint, ["Message", "message", "Description", "description"])
+        time_text = _pick_tracking_value(checkpoint, ["CheckpointTime", "checkpoint_time", "Time", "time"])
+        location = _pick_tracking_value(checkpoint, ["Location", "location", "City", "city"])
+        status = _pick_tracking_value(checkpoint, ["Status", "status", "NodeStatus", "node_status"])
+
+        timeline.append(
+            {
+                "time": time_text,
+                "location": location,
+                "status": status,
+                "message": message,
+            }
+        )
+
+    return timeline
 
 
 def _get_missing_default_profile_fields(default_sender: object | None, default_recipient: object | None) -> list[str]:
