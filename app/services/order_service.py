@@ -1,9 +1,12 @@
 from datetime import datetime
-from decimal import ROUND_CEILING, Decimal
-import random
+from decimal import Decimal
+import json
+import re
+from uuid import uuid4
 from collections.abc import Callable
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -18,6 +21,7 @@ from app.models.schemas import (
     ShippingEstimateRequest,
 )
 from app.services import address_book_service, chukou_service
+from app.services.chat_providers.coze_provider import CozeChatProvider
 from app.utils.helpers import generate_order_no
 
 
@@ -36,38 +40,88 @@ def _ensure_not_numeric_min_length(field_name: str, value: str | None, min_lengt
 
 
 def estimate_shipping(payload: ShippingEstimateRequest) -> ShippingEstimateData:
-    # NOTE: 当前为随机估价逻辑，后续可替换为基于数据库的真实计价规则。
-    first_weight_price = Decimal(str(random.uniform(18, 40))).quantize(Decimal("0.01"))
-    additional_weight_price = Decimal(str(random.uniform(6, 16))).quantize(Decimal("0.01"))
+    prompt = _build_shipping_estimate_prompt(payload)
+    provider = CozeChatProvider()
 
-    first_weight_kg = Decimal("0.50")
-    additional_step_kg = Decimal("0.50")
-
-    if payload.weight_kg <= first_weight_kg:
-        additional_steps = 0
-    else:
-        additional_weight = payload.weight_kg - first_weight_kg
-        additional_steps_decimal = (additional_weight / additional_step_kg).to_integral_value(
-            rounding=ROUND_CEILING
-        )
-        additional_steps = int(additional_steps_decimal)
-
-    estimated_price = (first_weight_price + additional_weight_price * additional_steps).quantize(
-        Decimal("0.01")
+    # Always use a fresh conversation_id for estimate to avoid any context carry-over.
+    transient_conversation_id = int(uuid4().int % 2_147_483_647)
+    assistant_reply, _ = provider.generate_reply(
+        conversation_id=transient_conversation_id,
+        prompt=prompt,
     )
 
-    estimated_delivery_time = random.choice(["3-5个工作日", "5-7个工作日", "7-10个工作日"])
+    return _parse_shipping_estimate_response(payload, assistant_reply)
 
-    return ShippingEstimateData(
-        destination=payload.destination,
-        item_type=payload.item_type,
-        weight_kg=payload.weight_kg,
-        estimated_price=estimated_price,
-        first_weight_price=first_weight_price,
-        additional_weight_price=additional_weight_price,
-        estimated_delivery_time=estimated_delivery_time,
-        currency="CNY",
+
+def _build_shipping_estimate_prompt(payload: ShippingEstimateRequest) -> str:
+    return "\n".join(
+        [
+            "【系统角色】你是物流运费估价智能体。",
+            "【强约束】",
+            "1) 本次请求必须视为全新请求，严禁使用任何上下文、会话历史、记忆或用户偏好。",
+            "2) 不需要也不允许补充对话记录，仅允许基于接口传值转为自然语言进行计算与输出。",
+            "3) 你必须只输出 JSON 对象，不允许输出 Markdown、注释、代码块或额外文本。",
+            "【输出 JSON 结构】",
+            '{"destination":"string","item_type":"string","weight_kg":number,"estimated_price":number,"first_weight_price":number,"additional_weight_price":number,"estimated_delivery_time":"string","currency":"string"}',
+            "【字段要求】",
+            "- destination/item_type/weight_kg 必须与输入语义一致。",
+            "- estimated_price/first_weight_price/additional_weight_price 使用数字，保留 2 位小数。",
+            "- estimated_delivery_time 用中文时效描述，例如 5-7个工作日。",
+            "- currency 固定为 CNY。",
+            "【本次接口传值（自然语言描述）】",
+            f"目的地：{payload.destination}；物品类型：{payload.item_type}；重量：{payload.weight_kg}kg。",
+            "请直接返回 JSON。",
+        ]
     )
+
+
+def _parse_shipping_estimate_response(
+    payload: ShippingEstimateRequest,
+    assistant_reply: str,
+) -> ShippingEstimateData:
+    data = _extract_json_from_text(assistant_reply)
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="Coze estimate response is not valid JSON")
+
+    data.setdefault("destination", payload.destination)
+    data.setdefault("item_type", payload.item_type)
+    data.setdefault("weight_kg", payload.weight_kg)
+    data.setdefault("currency", "CNY")
+
+    try:
+        return ShippingEstimateData.model_validate(data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=502, detail=f"Coze estimate JSON schema invalid: {exc.errors()}") from exc
+
+
+def _extract_json_from_text(raw_text: str) -> dict | None:
+    text = (raw_text or "").strip()
+    if not text:
+        return None
+
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    fence_match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
+    if fence_match:
+        try:
+            parsed = json.loads(fence_match.group(1))
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            parsed = json.loads(text[start : end + 1])
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
 
 
 def create_order(db: Session, user: User, payload: OrderCreateRequest) -> Order:
