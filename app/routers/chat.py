@@ -43,19 +43,5 @@ def send_message(
     else:
         conversation = chat_service.get_conversation(db, current_user, payload.conversation_id)
 
-    history_messages = chat_service.list_messages(db, conversation)
-    prompt = chat_service.build_conversation_prompt(history_messages, payload.message)
-
-    chat_service.add_message(db, conversation, role="user", content=payload.message)
-    assistant_reply, stream_events = chat_service.request_assistant_reply(
-        conversation=conversation,
-        prompt=prompt,
-    )
-    chat_service.add_message(db, conversation, role="assistant", content=assistant_reply)
-
-    data = ChatMessageData(
-        conversation_id=conversation.id,
-        message=assistant_reply,
-        stream_events=stream_events,
-    )
+    data = chat_service.handle_chat_message(db, current_user, conversation, payload.message)
     return ok(data=data)

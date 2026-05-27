@@ -8,8 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.database import Order, OrderItem, OrderParcel, OrderRecipient, OrderSender, User
-from app.models.schemas import OrderCreateRequest, ShippingEstimateData, ShippingEstimateRequest
-from app.services import chukou_service
+from app.models.schemas import (
+    AiOrderCreateRequest,
+    OrderCoreCreate,
+    OrderCreateRequest,
+    OrderRecipientCreate,
+    OrderSenderCreate,
+    ShippingEstimateData,
+    ShippingEstimateRequest,
+)
+from app.services import address_book_service, chukou_service
 from app.utils.helpers import generate_order_no
 
 
@@ -152,6 +160,58 @@ def create_order(db: Session, user: User, payload: OrderCreateRequest) -> Order:
     complete_order(db, order)
     db.refresh(order)
     return order
+
+
+def ai_create_order(db: Session, user: User, payload: AiOrderCreateRequest) -> Order:
+    default_sender = address_book_service.get_default_sender_profile(db, user)
+    if not default_sender:
+        raise HTTPException(status_code=422, detail="Default sender profile is required")
+
+    default_recipient = address_book_service.get_default_recipient_profile(db, user)
+    if not default_recipient:
+        raise HTTPException(status_code=422, detail="Default recipient profile is required")
+
+    if not default_recipient.postcode:
+        raise HTTPException(status_code=422, detail="Default recipient postcode is required")
+
+    full_payload = OrderCreateRequest(
+        order=OrderCoreCreate(
+            package_id=payload.package_id or generate_order_no(),
+            platform_order_no=payload.platform_order_no,
+            location_code=payload.location_code,
+            submit_later=payload.submit_later,
+            user_remark=payload.user_remark,
+            payable_amount=payload.payable_amount,
+            payment_currency=payload.payment_currency,
+        ),
+        sender=OrderSenderCreate(
+            sender_name=default_sender.sender_name,
+            sender_phone_code=default_sender.sender_phone_code,
+            sender_phone=default_sender.sender_phone,
+            pickup_point_id=default_sender.pickup_point_id,
+            pickup_point_name=default_sender.pickup_point_name,
+            domestic_tracking_no=default_sender.domestic_tracking_no,
+        ),
+        recipient=OrderRecipientCreate(
+            recipient_name=default_recipient.recipient_name,
+            phone_code=default_recipient.phone_code,
+            phone=default_recipient.phone,
+            country_code=default_recipient.country_code,
+            country_name=default_recipient.country_name,
+            province=default_recipient.province,
+            city=default_recipient.city,
+            district=default_recipient.district,
+            street1=default_recipient.street1,
+            street2=default_recipient.street2,
+            postcode=default_recipient.postcode,
+            email=default_recipient.email,
+            id_type=default_recipient.id_type,
+            id_number=default_recipient.id_number,
+        ),
+        parcel=payload.parcel,
+        items=payload.items,
+    )
+    return create_order(db, user, full_payload)
 
 
 def list_orders(db: Session, user: User, status: str | None, skip: int, limit: int) -> tuple[list[Order], int]:

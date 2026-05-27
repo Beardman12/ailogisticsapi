@@ -123,6 +123,41 @@ class OrderCreateRequest(BaseModel):
         return self
 
 
+class AiOrderCreateRequest(BaseModel):
+    package_id: str | None = Field(default=None, max_length=64)
+    platform_order_no: str | None = Field(default=None, max_length=64)
+    location_code: str | None = Field(default=None, max_length=20)
+    submit_later: bool = False
+    user_remark: str | None = Field(default=None, max_length=500)
+    payment_currency: str = Field(default="USD", min_length=3, max_length=8)
+    payable_amount: Decimal | None = Field(default=None, gt=0)
+    parcel: OrderParcelCreate
+    items: list[OrderItemCreate] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def normalize_and_validate(self) -> "AiOrderCreateRequest":
+        if self.package_id is not None:
+            self.package_id = self.package_id.strip() or None
+
+        line_nos = [item.line_no for item in self.items]
+        if len(line_nos) != len(set(line_nos)):
+            raise ValueError("items.line_no must be unique")
+
+        derived_total = Decimal("0")
+        for item in self.items:
+            expected_total = item.unit_price_usd * item.quantity
+            if item.total_price_usd != expected_total:
+                raise ValueError(
+                    f"items[{item.line_no}].total_price_usd must equal unit_price_usd * quantity"
+                )
+            derived_total += item.total_price_usd
+
+        if self.payable_amount is None:
+            self.payable_amount = derived_total
+
+        return self
+
+
 class OrderItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -291,6 +326,9 @@ class ChatMessageData(BaseModel):
     conversation_id: int
     message: str
     stream_events: list[Any] = Field(default_factory=list)
+    requires_confirmation: bool = False
+    pending_order_payload: AiOrderCreateRequest | None = None
+    confirmed_order_id: int | None = None
 
 
 class MessageOut(BaseModel):

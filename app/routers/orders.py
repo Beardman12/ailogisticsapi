@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.database import User
 from app.models.schemas import (
+    AiOrderCreateRequest,
     ApiResponse,
     OrderCreateRequest,
     OrderListData,
@@ -27,6 +28,17 @@ def create_order(
     order = order_service.create_order(db, current_user, payload)
     db.refresh(order)
     return ok(data=OrderOut.model_validate(order), message="Order created")
+
+
+@router.post("/ai-create", response_model=ApiResponse)
+def ai_create_order(
+    payload: AiOrderCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse:
+    order = order_service.ai_create_order(db, current_user, payload)
+    db.refresh(order)
+    return ok(data=OrderOut.model_validate(order), message="AI order created")
 
 
 @router.get("", response_model=ApiResponse)
