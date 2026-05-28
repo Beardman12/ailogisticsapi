@@ -168,7 +168,7 @@ def handle_chat_message(db: Session, user: User, conversation: Conversation, use
 
     pending_result = _handle_pending_confirmation(db, user, conversation, user_message)
     if pending_result is not None:
-        assistant_reply, requires_confirmation, pending_payload, confirmed_order_id = pending_result
+        assistant_reply, requires_confirmation, pending_payload, confirmed_order_id, confirmed_order_no = pending_result
         add_message(db, conversation, role="assistant", content=assistant_reply)
         return ChatMessageData(
             conversation_id=conversation.id,
@@ -177,6 +177,7 @@ def handle_chat_message(db: Session, user: User, conversation: Conversation, use
             requires_confirmation=requires_confirmation,
             pending_order_payload=pending_payload,
             confirmed_order_id=confirmed_order_id,
+            confirmed_order_no=confirmed_order_no,
         )
 
     history_messages = list_messages(db, conversation)
@@ -225,6 +226,7 @@ def handle_chat_message(db: Session, user: User, conversation: Conversation, use
             requires_confirmation=False,
             pending_order_payload=None,
             confirmed_order_id=None,
+            confirmed_order_no=None,
         )
 
     if not _is_order_intent(user_message):
@@ -241,6 +243,7 @@ def handle_chat_message(db: Session, user: User, conversation: Conversation, use
             requires_confirmation=False,
             pending_order_payload=None,
             confirmed_order_id=None,
+            confirmed_order_no=None,
         )
 
     prompt = build_order_decision_prompt(history_messages, user_message, default_sender, default_recipient)
@@ -426,6 +429,21 @@ def _get_pending_confirmation(
     )
 
 
+def _get_latest_pending_confirmation_for_user(
+    db: Session,
+    user: User,
+) -> PendingOrderConfirmation | None:
+    return (
+        db.query(PendingOrderConfirmation)
+        .filter(
+            PendingOrderConfirmation.user_id == user.id,
+            PendingOrderConfirmation.status == "pending",
+        )
+        .order_by(PendingOrderConfirmation.id.desc())
+        .first()
+    )
+
+
 def _upsert_pending_confirmation(
     db: Session,
     user: User,
@@ -457,10 +475,16 @@ def _handle_pending_confirmation(
     user: User,
     conversation: Conversation,
     user_message: str,
-) -> tuple[str, bool, AiOrderCreateRequest | None, int | None] | None:
+) -> tuple[str, bool, AiOrderCreateRequest | None, int | None, str | None] | None:
+    normalized = _normalize_confirmation_text(user_message)
+
     pending = _get_pending_confirmation(db, user, conversation)
     if not pending:
-        return None
+        if not (_is_confirm_message(normalized) or _is_cancel_message(normalized)):
+            return None
+        pending = _get_latest_pending_confirmation_for_user(db, user)
+        if not pending:
+            return None
 
     if _is_pending_expired(pending):
         pending.status = "expired"
@@ -470,9 +494,9 @@ def _handle_pending_confirmation(
             False,
             None,
             None,
+            None,
         )
 
-    normalized = user_message.strip().lower()
     if _is_confirm_message(normalized):
         payload = AiOrderCreateRequest.model_validate(json.loads(pending.payload_json))
         order = order_service.ai_create_order(db, user, payload)
@@ -483,12 +507,13 @@ def _handle_pending_confirmation(
             False,
             None,
             order.id,
+            order.order_no,
         )
 
     if _is_cancel_message(normalized):
         pending.status = "cancelled"
         db.commit()
-        return ("已取消本次待确认下单。", False, None, None)
+        return ("已取消本次待确认下单。", False, None, None, None)
 
     payload = AiOrderCreateRequest.model_validate(json.loads(pending.payload_json))
     return (
@@ -496,15 +521,34 @@ def _handle_pending_confirmation(
         True,
         payload,
         None,
+        None,
     )
 
 
+def _normalize_confirmation_text(text: str) -> str:
+    normalized = (text or "").strip().lower()
+    # Remove common separators/punctuation so inputs like "确认下单。" also match.
+    return re.sub(r"[\s\.,，。!！?？:：;；'\"“”‘’\-_/\\|()（）\[\]【】<>《》]", "", normalized)
+
+
 def _is_confirm_message(text: str) -> bool:
-    return text in {"确认下单"}
+    normalized = _normalize_confirmation_text(text)
+    return normalized in {
+        "确认下单",
+        "确认订单",
+        "确认",
+        "继续下单",
+        "继续",
+        "ok",
+        "okay",
+        "yes",
+        "y",
+    }
 
 
 def _is_cancel_message(text: str) -> bool:
-    return text in {"取消下单", "放弃下单", "取消订单"}
+    normalized = _normalize_confirmation_text(text)
+    return normalized in {"取消下单", "放弃下单", "取消订单", "取消", "不下单", "算了", "no", "n"}
 
 
 def _is_order_intent(user_message: str) -> bool:

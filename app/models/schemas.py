@@ -329,6 +329,7 @@ class ChatMessageData(BaseModel):
     requires_confirmation: bool = False
     pending_order_payload: AiOrderCreateRequest | None = None
     confirmed_order_id: int | None = None
+    confirmed_order_no: str | None = None
 
 
 class MessageOut(BaseModel):

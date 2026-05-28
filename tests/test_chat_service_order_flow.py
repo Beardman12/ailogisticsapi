@@ -86,7 +86,7 @@ def test_handle_chat_message_returns_pending_confirmation_prompt(monkeypatch):
     monkeypatch.setattr(
         chat_service,
         "_handle_pending_confirmation",
-        lambda db, user, c, m: ("请确认下单", True, None, None),
+        lambda db, user, c, m: ("请确认下单", True, None, None, None),
     )
 
     result = chat_service.handle_chat_message(
@@ -327,10 +327,20 @@ def test_is_tracking_intent_supports_keywords_and_alnum_pattern():
     assert chat_service._is_tracking_intent("你们支持哪些渠道") is False
 
 
-def test_confirm_message_requires_exact_phrase():
+def test_confirm_message_supports_common_variants():
     assert chat_service._is_confirm_message("确认下单") is True
-    assert chat_service._is_confirm_message("ok") is False
-    assert chat_service._is_confirm_message("yes") is False
+    assert chat_service._is_confirm_message("确认下单。") is True
+    assert chat_service._is_confirm_message(" 确认 下单 ") is True
+    assert chat_service._is_confirm_message("确认") is True
+    assert chat_service._is_confirm_message("ok") is True
+    assert chat_service._is_confirm_message("yes") is True
+
+
+def test_cancel_message_supports_common_variants():
+    assert chat_service._is_cancel_message("取消下单") is True
+    assert chat_service._is_cancel_message("取消下单。") is True
+    assert chat_service._is_cancel_message("不下单") is True
+    assert chat_service._is_cancel_message("no") is True
 
 
 def test_handle_pending_confirmation_expires(monkeypatch):
@@ -364,10 +374,60 @@ def test_handle_pending_confirmation_expires(monkeypatch):
     )
 
     assert result is not None
-    message, requires_confirmation, pending_payload, confirmed_order_id = result
+    message, requires_confirmation, pending_payload, confirmed_order_id, confirmed_order_no = result
     assert "超时失效" in message
     assert requires_confirmation is False
     assert pending_payload is None
     assert confirmed_order_id is None
+    assert confirmed_order_no is None
     assert pending.status == "expired"
+    assert db.commit_count == 1
+
+
+def test_handle_pending_confirmation_fallbacks_to_latest_user_pending(monkeypatch):
+    payload_json = (
+        '{"payment_currency":"USD","parcel":{"cargo_type":"general","weight_g_input":500,'
+        '"length_cm_input":20,"width_cm_input":10,"height_cm_input":8},'
+        '"items":[{"line_no":1,"goods_desc_cn":"手机壳","goods_desc_en":"Phone Case",'
+        '"unit_price_usd":2.5,"quantity":2,"total_price_usd":5.0}]}'
+    )
+    pending = SimpleNamespace(
+        id=12,
+        payload_json=payload_json,
+        status="pending",
+        created_at=datetime.now() - timedelta(minutes=1),
+    )
+
+    monkeypatch.setattr(chat_service, "_get_pending_confirmation", lambda db, user, conversation: None)
+    monkeypatch.setattr(chat_service, "_get_latest_pending_confirmation_for_user", lambda db, user: pending)
+    monkeypatch.setattr(
+        chat_service.order_service,
+        "ai_create_order",
+        lambda db, user, payload: SimpleNamespace(id=101, order_no="ORD001", order_status="submitted"),
+    )
+
+    class FakeDb:
+        def __init__(self):
+            self.commit_count = 0
+
+        def commit(self):
+            self.commit_count += 1
+
+    db = FakeDb()
+
+    result = chat_service._handle_pending_confirmation(
+        db=db,
+        user=SimpleNamespace(id=1),
+        conversation=SimpleNamespace(id=99),
+        user_message="确认下单。",
+    )
+
+    assert result is not None
+    message, requires_confirmation, pending_payload, confirmed_order_id, confirmed_order_no = result
+    assert "已为你提交下单" in message
+    assert requires_confirmation is False
+    assert pending_payload is None
+    assert confirmed_order_id == 101
+    assert confirmed_order_no == "ORD001"
+    assert pending.status == "confirmed"
     assert db.commit_count == 1

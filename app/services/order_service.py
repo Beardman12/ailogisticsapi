@@ -291,8 +291,11 @@ def _decimal_to_float(value: Decimal | None) -> float | None:
     return float(value)
 
 
-def _build_chukou_package_id(order_id: int) -> str:
-    return f"mini{order_id:010d}"
+def _build_chukou_package_id(order_no: str) -> str:
+    normalized_order_no = (order_no or "").strip()
+    if not normalized_order_no:
+        raise HTTPException(status_code=400, detail="order_no is required")
+    return normalized_order_no
 
 
 def _build_submit_payload(order: Order) -> dict:
@@ -334,10 +337,11 @@ def _build_submit_payload(order: Order) -> dict:
             }
         )
 
-    chukou_package_id = _build_chukou_package_id(order.id)
+    chukou_package_id = _build_chukou_package_id(order.order_no)
 
     package = {
         "PackageId": chukou_package_id,
+        "SalesPlatform": "小程序下单",
         "PlatformOrderNo": order.platform_order_no,
         "ServiceCode": order.service_code,
         "Weight": order.parcel.weight_g_input,
@@ -468,7 +472,7 @@ def complete_order(
     # Try a single status query right after submit. If upstream has not finished async processing,
     # keep local order in creating state and let later polling endpoint/scheduler continue.
     try:
-        status_package_id = _build_chukou_package_id(order.id)
+        status_package_id = _build_chukou_package_id(order.order_no)
         _, status_payload = chukou_service.get_direct_express_order_status(status_package_id)
         if debug_collector:
             debug_collector({"stage": "status_response", "response_data": status_payload})
