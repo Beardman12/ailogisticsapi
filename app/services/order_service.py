@@ -58,9 +58,10 @@ def _build_shipping_estimate_prompt(payload: ShippingEstimateRequest) -> str:
         [
             "【系统角色】你是物流运费估价智能体。",
             "【强约束】",
-            "1) 本次请求必须视为全新请求，严禁使用任何上下文、会话历史、记忆或用户偏好。",
+            "1) 本次请求必须视为全新请求，严禁使用会话历史、记忆或用户偏好，只在知识库中进行检索相关数据。",
             "2) 不需要也不允许补充对话记录，仅允许基于接口传值转为自然语言进行计算与输出。",
             "3) 你必须只输出 JSON 对象，不允许输出 Markdown、注释、代码块或额外文本。",
+            "4) 预估价格是 重量*单价+处理费，单价和处理费用可能随目的地、物品类型和重量不同而不同。",
             "【输出 JSON 结构】",
             '{"destination":"string","item_type":"string","weight_kg":number,"estimated_price":number,"first_weight_price":number,"additional_weight_price":number,"estimated_delivery_time":"string","currency":"string"}',
             "【字段要求】",
